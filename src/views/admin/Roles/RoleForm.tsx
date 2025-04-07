@@ -189,7 +189,7 @@ const RoleForm: React.FC<RoleFormProps> = ({ role, permissions, loading, onSubmi
             <i className="ph-duotone ph-magnifying-glass"></i>
           </InputGroup.Text>
           <Form.Control
-            placeholder="Поиск разрешений..."
+            placeholder="Поик разрешений..."
             value={permissionFilter}
             onChange={(e) => setPermissionFilter(e.target.value)}
           />
