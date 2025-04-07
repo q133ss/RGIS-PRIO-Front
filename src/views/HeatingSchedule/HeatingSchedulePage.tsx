@@ -36,8 +36,59 @@ const HeatingSchedulePage: React.FC = () => {
     filterStreetId: undefined as number | undefined,
     filterHouseNumber: '',
   });
+
+  const [filterState, setFilterState] = useState({
+    cityId: undefined as number | undefined,
+    streetId: undefined as number | undefined,
+    houseNumber: '',
+  });
+
+  const [filterOptions, setFilterOptions] = useState({
+    cities: [] as City[],
+    streets: [] as Street[],
+    houseNumbers: [] as string[],
+  });
+
   const [filterCities, setFilterCities] = useState<City[]>([]);
   const [filterStreets, setFilterStreets] = useState<Street[]>([]);
+
+  useEffect(() => {
+    const loadCities = async () => {
+      try {
+        const response = await getCities(); // response содержит свойство data с массивом городов
+        const citiesData = response.data; // Получаем массив городов из response.data
+
+        setFilterOptions(prev => ({
+          ...prev,
+          cities: Array.isArray(citiesData) ? citiesData : [],
+        }));
+      } catch (error) {
+        console.error('Ошибка загрузки городов:', error);
+      }
+    };
+
+    loadCities();
+  }, []);
+
+  useEffect(() => {
+    const loadStreets = async () => {
+      if (!filterState.cityId) {
+        setFilterOptions(prev => ({ ...prev, streets: [] }));
+        return;
+      }
+      try {
+        const streetsData = await getStreets(filterState.cityId);
+        setFilterOptions(prev => ({
+          ...prev,
+          streets: Array.isArray(streetsData) ? streetsData : [],
+        }));
+      } catch (error) {
+        console.error('Ошибка загрузки улиц:', error);
+      }
+    };
+    loadStreets();
+  }, [filterState.cityId]);
+
   const [showFormModal, setShowFormModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
@@ -192,14 +243,11 @@ const HeatingSchedulePage: React.FC = () => {
 
   useEffect(() => {
     const loadFilterCities = async () => {
-      setModalLoading(prev => ({ ...prev, cities: true }));
       try {
         const citiesData = await getCities();
         setFilterCities(Array.isArray(citiesData) ? citiesData : []);
-        setModalCities(Array.isArray(citiesData) ? citiesData : []);
       } catch (error: any) {
-      } finally {
-        setModalLoading(prev => ({ ...prev, cities: false }));
+        // обработка ошибки
       }
     };
     loadFilterCities();
@@ -285,26 +333,27 @@ const HeatingSchedulePage: React.FC = () => {
 
   const loadHeatingSchedule = async () => {
     setState(prev => ({ ...prev, loading: true, error: null }));
-    if (apiRetryCount >= MAX_API_RETRY_ATTEMPTS && !apiSuccessful) {
-      setState(prev => ({
-        ...prev,
-        error: `Не удалось загрузить данные после ${MAX_API_RETRY_ATTEMPTS} попыток. Пожалуйста, попробуйте позже.`,
-        loading: false,
-        success: ''
-      }));
-      return;
-    }
     try {
-      try {
-        await initializeApi();
-      } catch {
-      }
       const response = await getHeatingSchedule(
-        state.filterCityId,
-        state.filterStreetId,
-        state.filterHouseNumber
+          state.filterCityId,
+          state.filterStreetId,
+          state.filterHouseNumber
       );
-      setApiSuccessful(true);
+
+      // Извлекаем доступные номера домов из полученных данных
+      const houseNumbers = Array.from(
+          new Set(
+              response.data
+                  ?.map(item => item.address?.house_number)
+                  .filter(Boolean) as string[]
+          )
+      ).sort();
+
+      setFilterOptions(prev => ({
+        ...prev,
+        houseNumbers,
+      }));
+
       setState(prev => ({
         ...prev,
         items: response.data ?? [],
@@ -313,27 +362,14 @@ const HeatingSchedulePage: React.FC = () => {
         totalPages: response.last_page || 1,
         loading: false,
         success: 'success',
-        error: null
+        error: null,
       }));
     } catch (error: any) {
-      const errorMsg = String(error);
-      if (errorMsg.includes('авторизац') || errorMsg.includes('Unauthorized') || errorMsg.includes('Unauthenticated')) {
-        setAuthError(true);
-        setState(prev => ({
-          ...prev,
-          error: 'Ошибка авторизации. Пожалуйста, обновите страницу или войдите в систему заново.',
-          loading: false,
-          success: ''
-        }));
-      } else {
-        setApiRetryCount(prev => prev + 1);
-        setState(prev => ({
-          ...prev,
-          error: `Ошибка загрузки данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
-          loading: false,
-          success: ''
-        }));
-      }
+      setState(prev => ({
+        ...prev,
+        error: 'Ошибка загрузки данных',
+        loading: false,
+      }));
     }
   };
 
@@ -533,7 +569,14 @@ const HeatingSchedulePage: React.FC = () => {
     }
   };
 
-  const handleApplyFilters = () => {
+  const applyFilters = () => {
+    setState(prev => ({
+      ...prev,
+      currentPage: 1,
+      filterCityId: filterState.cityId,
+      filterStreetId: filterState.streetId,
+      filterHouseNumber: filterState.houseNumber,
+    }));
     loadHeatingSchedule();
   };
 
@@ -826,7 +869,7 @@ const HeatingSchedulePage: React.FC = () => {
             <OverlayTrigger overlay={
               <Tooltip id={`tooltip-disc-${item.id}`}>
                 {item.disconnection_omsu_order_title || 'Order'}
-                {item.disconnection_omsu_order_date && ` from ${formatDate(item.disconnection_omsu_order_date)}`}
+                {item.disconnection_omsu_order_date && ` от ${formatDate(item.disconnection_omsu_order_date)}`}
               </Tooltip>
             }>
               <span className="text-primary cursor-pointer">{item.disconnection_omsu_order_number}</span>
@@ -837,7 +880,7 @@ const HeatingSchedulePage: React.FC = () => {
             <OverlayTrigger overlay={
               <Tooltip id={`tooltip-conn-${item.id}`}>
                 {item.connection_omsu_order_title || 'Order'}
-                {item.connection_omsu_order_date && ` from ${formatDate(item.connection_omsu_order_date)}`}
+                {item.connection_omsu_order_date && ` от ${formatDate(item.connection_omsu_order_date)}`}
               </Tooltip>
             }>
               <span className="text-primary cursor-pointer">{item.connection_omsu_order_number}</span>
@@ -921,43 +964,52 @@ const HeatingSchedulePage: React.FC = () => {
                 <Col md={3}>
                   <Form.Group>
                     <Form.Label>Город</Form.Label>
-                    <Form.Select
-                      value={state.filterCityId ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setState(p => ({
-                          ...p,
-                          filterCityId: v ? parseInt(v, 10) : undefined,
-                          filterStreetId: undefined,
-                          filterHouseNumber: ''
-                        }));
-                      }}
-                    >
-                      <option value="">Выберите город</option>
-                      {filterCities.map(c => (
-                        <option key={c.id} value={c.id}>{c.name}</option>
-                      ))}
-                    </Form.Select>
+                    {filterOptions.cities.length === 0 ? (
+                        <div className="d-flex align-items-center">
+                          <Spinner animation="border" size="sm" className="me-2" />
+                          <span>Загрузка городов...</span>
+                        </div>
+                    ) : (
+                        <Form.Select
+                            value={filterState.cityId ?? ''}
+                            onChange={(e) => {
+                              const cityId = e.target.value ? parseInt(e.target.value) : undefined;
+                              setFilterState(prev => ({
+                                ...prev,
+                                cityId,
+                                streetId: undefined,
+                                houseNumber: '',
+                              }));
+                            }}
+                        >
+                          <option value="">Все города</option>
+                          {filterOptions.cities.map(city => (
+                              <option key={city.id} value={city.id}>
+                                {city.name}
+                              </option>
+                          ))}
+                        </Form.Select>
+                    )}
                   </Form.Group>
                 </Col>
                 <Col md={3}>
                   <Form.Group>
                     <Form.Label>Улица</Form.Label>
                     <Form.Select
-                      value={state.filterStreetId ?? ''}
-                      onChange={(e) => {
-                        const v = e.target.value;
-                        setState(p => ({
-                          ...p,
-                          filterStreetId: v ? parseInt(v, 10) : undefined,
-                          filterHouseNumber: ''
-                        }));
-                      }}
-                      disabled={!state.filterCityId}
+                        value={filterState.streetId ?? ''}
+                        onChange={(e) => {
+                          const streetId = e.target.value ? parseInt(e.target.value) : undefined;
+                          setFilterState(prev => ({
+                            ...prev,
+                            streetId,
+                            houseNumber: '',
+                          }));
+                        }}
+                        disabled={!filterState.cityId}
                     >
-                      <option value="">Выберите улицу</option>
-                      {filterStreets.map(s => (
-                        <option key={s.id} value={s.id}>{s.name}</option>
+                      <option value="">Все улицы</option>
+                      {filterOptions.streets.map(street => (
+                          <option key={street.id} value={street.id}>{street.name}</option>
                       ))}
                     </Form.Select>
                   </Form.Group>
@@ -966,29 +1018,35 @@ const HeatingSchedulePage: React.FC = () => {
                   <Form.Group>
                     <Form.Label>Номер дома</Form.Label>
                     <Form.Control
-                      type="text"
-                      placeholder="Номер дома"
-                      value={state.filterHouseNumber}
-                      onChange={(e) => setState(p => ({
-                        ...p,
-                        filterHouseNumber: e.target.value
-                      }))}
-                      disabled={!state.filterStreetId}
+                        type="text"
+                        placeholder="Номер дома"
+                        value={filterState.houseNumber}
+                        onChange={(e) => setFilterState(prev => ({
+                          ...prev,
+                          houseNumber: e.target.value,
+                        }))}
+                        disabled={!filterState.streetId}
                     />
                   </Form.Group>
                 </Col>
                 <Col md={3} className="d-flex justify-content-end gap-2">
                   <Button
-                    variant="outline-secondary"
-                    onClick={handleResetFilters}
-                    disabled={!state.filterCityId && !state.filterStreetId && !state.filterHouseNumber}
+                      variant="outline-secondary"
+                      onClick={() => {
+                        setFilterState({
+                          cityId: undefined,
+                          streetId: undefined,
+                          houseNumber: '',
+                        });
+                      }}
+                      disabled={!filterState.cityId && !filterState.streetId && !filterState.houseNumber}
                   >
                     <i className="ti ti-trash me-1"></i>Сбросить
                   </Button>
                   <Button
-                    variant="primary"
-                    onClick={handleApplyFilters}
-                    disabled={state.loading}
+                      variant="primary"
+                      onClick={applyFilters}
+                      disabled={state.loading}
                   >
                     <i className="ti ti-filter me-1"></i>Применить
                   </Button>
