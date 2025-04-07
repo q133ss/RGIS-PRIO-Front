@@ -348,212 +348,154 @@ const MkdMap: React.FC = () => {
 
   const initMap = (dataToShow: MkdBuilding[] = filteredMapData): void => {
     if (!mapRef.current || !window.ymaps || dataToShow.length === 0) {
-      return;
+      return
     }
-
     try {
-      // Создаем карту с центром в указанных координатах
       const myMap = new window.ymaps.Map(mapRef.current, {
         center: [mapBoundaries.center_lat, mapBoundaries.center_lng],
         zoom: 12,
         controls: ['zoomControl', 'typeSelector', 'fullscreenControl']
-      });
-
-      // Устанавливаем границы карты
+      })
       const bounds = [
-        [parseFloat(mapBoundaries.south_west_lat), parseFloat(mapBoundaries.south_west_lng)],
-        [parseFloat(mapBoundaries.north_east_lat), parseFloat(mapBoundaries.north_east_lng)]
-      ];
-
-      // Ограничиваем область просмотра
+        [mapBoundaries.south_west_lat, mapBoundaries.south_west_lng],
+        [mapBoundaries.north_east_lat, mapBoundaries.north_east_lng]
+      ]
+      myMap.behaviors.enable('scrollZoom')
+      mapInstanceRef.current = myMap
       myMap.setBounds(bounds, {
-        checkZoomRange: true,
-        zoomMargin: 0 // Отступы при установке границ
-      });
-
-      // Запрещаем выход за границы
-      myMap.options.set('restrictMapArea', bounds);
-
-      // Включаем только нужные поведения
-      myMap.behaviors.enable('scrollZoom');
-      myMap.behaviors.enable('multiTouch');
-
-      mapInstanceRef.current = myMap;
-
-      // Создаем кластеризатор
+        checkZoomRange: true
+      })
       const clusterer = new window.ymaps.Clusterer({
         preset: 'islands#greenClusterIcons',
         groupByCoordinates: false,
         clusterDisableClickZoom: true,
         clusterHideIconOnBalloonOpen: false,
         geoObjectHideIconOnBalloonOpen: false
-      });
-
-      const placemarks: any[] = [];
-      const locationMap: { [key: string]: MkdBuilding[] } = {};
-
-      // Фильтруем точки, которые попадают в границы карты
-      const filteredPoints = dataToShow.filter(item => {
-        if (!item.address || !item.address.latitude || !item.address.longitude) {
-          return false;
-        }
-
-        const lat = parseFloat(item.address.latitude);
-        const lng = parseFloat(item.address.longitude);
-
-        return lat >= parseFloat(mapBoundaries.south_west_lat) &&
-            lat <= parseFloat(mapBoundaries.north_east_lat) &&
-            lng >= parseFloat(mapBoundaries.south_west_lng) &&
-            lng <= parseFloat(mapBoundaries.north_east_lng);
-      });
-
-      // Создаем метки только для точек в пределах границ
-      filteredPoints.forEach(item => {
+      })
+      const placemarks: any[] = []
+      const locationMap: { [key: string]: MkdBuilding[] } = {}
+      dataToShow.forEach(item => {
         if (item.address && item.address.latitude && item.address.longitude) {
-          const coords = [parseFloat(item.address.latitude), parseFloat(item.address.longitude)];
-          const coordKey = `${coords[0]},${coords[1]}`;
-
+          const coords = [parseFloat(item.address.latitude), parseFloat(item.address.longitude)]
+          const coordKey = `${coords[0]},${coords[1]}`
           if (!locationMap[coordKey]) {
-            locationMap[coordKey] = [];
+            locationMap[coordKey] = []
           }
-          locationMap[coordKey].push(item);
-
+          locationMap[coordKey].push(item)
           if (!placemarks.some(p => p.geometry.getCoordinates().toString() === coords.toString())) {
             const address = item.address.street && item.address.street.name
-                ? `${item.address.street.city?.name || ''}, ${item.address.street.name}, ${item.address.house_number}`
-                : `Дом №${item.address.house_number}`;
-
+              ? `${item.address.street.city?.name || ''}, ${item.address.street.name}, ${item.address.house_number}`
+              : `Дом №${item.address.house_number}`
             const placemark = new window.ymaps.Placemark(
-                coords,
-                {
-                  balloonContent: locationMap[coordKey].length > 1
-                      ? `${locationMap[coordKey].length} домов`
-                      : `
-                <div>
-                  <strong>${address}</strong><br>
-                  УК: ${item.management_org?.shortName || 'Не указана'}<br>
-                  Год постройки: ${item.buildingYear || 'Не указан'}<br>
-                  Состояние: ${item.house_condition?.houseCondition || 'Не указано'}<br>
-                  Кадастровый номер: ${item.cadastreNumber || 'Не указан'}
-                </div>
-              `,
-                  hintContent: locationMap[coordKey].length > 1 ? `${locationMap[coordKey].length} домов` : address,
-                  itemId: item.id,
-                  coordKey: coordKey,
-                  itemCount: locationMap[coordKey].length,
-                  condition: item.house_condition?.houseCondition || 'Нет данных'
-                },
-                {
-                  preset: getPlacemarkColor(item),
-                  balloonOffset: [3, -40]
-                }
-            );
-
+              coords,
+              {
+                balloonContent:
+                  locationMap[coordKey].length > 1
+                    ? `${locationMap[coordKey].length} домов`
+                    : `
+                    <div>
+                      <strong>${address}</strong><br>
+                      УК: ${item.management_org?.shortName || 'Не указана'}<br>
+                      Год постройки: ${item.buildingYear || 'Не указан'}<br>
+                      Состояние: ${item.house_condition?.houseCondition || 'Не указано'}<br>
+                      Кадастровый номер: ${item.cadastreNumber || 'Не указан'}
+                    </div>
+                  `,
+                hintContent: locationMap[coordKey].length > 1 ? `${locationMap[coordKey].length} домов` : address,
+                itemId: item.id,
+                coordKey: coordKey,
+                itemCount: locationMap[coordKey].length,
+                condition: item.house_condition?.houseCondition || 'Нет данных'
+              },
+              {
+                preset: getPlacemarkColor(item),
+                balloonOffset: [3, -40]
+              }
+            )
             placemark.events.add('click', (e: any) => {
               if (locationMap[coordKey].length === 1) {
-                setSelectedItem(item);
-                setShowModal(true);
+                setSelectedItem(item)
+                setShowModal(true)
               } else {
-                setClusterBuildings(locationMap[coordKey].map(building => ({ ...building, isSelected: false })));
-                setShowClusterModal(true);
+                setClusterBuildings(locationMap[coordKey].map(building => ({ ...building, isSelected: false })))
+                setShowClusterModal(true)
               }
-              e.stopPropagation();
-            });
-
-            placemarks.push(placemark);
+              e.stopPropagation()
+            })
+            placemarks.push(placemark)
           }
         }
-      });
-
+      })
       if (placemarks.length > 0) {
         clusterer.options.set({
           clusterIconContentLayout: window.ymaps.templateLayoutFactory.createClass(
-              '<div style="font-size: 13px; line-height: 26px; font-weight: bold; text-align: center; color: #fff;">{{ properties.geoObjects.length }}</div>'
+            '<div style="font-size: 13px; line-height: 26px; font-weight: bold; text-align: center; color: #fff;">{{ properties.geoObjects.length }}</div>'
           )
-        });
-
+        })
         clusterer.events.add('click', function (e: any) {
-          const cluster = e.get('target');
+          const cluster = e.get('target')
           const handleClusterInteraction = (): void => {
-            const geoObjects = cluster.getGeoObjects();
+            const geoObjects = cluster.getGeoObjects()
             if (geoObjects.length === 1 && geoObjects[0].properties.get('itemCount') > 1) {
-              const coordKey = geoObjects[0].properties.get('coordKey');
+              const coordKey = geoObjects[0].properties.get('coordKey')
               if (coordKey && locationMap[coordKey]) {
-                setClusterBuildings(locationMap[coordKey].map(building => ({ ...building, isSelected: false })));
-                setShowClusterModal(true);
+                setClusterBuildings(locationMap[coordKey].map(building => ({ ...building, isSelected: false })))
+                setShowClusterModal(true)
                 if (cluster.balloon.isOpen()) {
-                  cluster.balloon.close();
+                  cluster.balloon.close()
                 }
-                return;
+                return
               }
             }
-
-            const allBuildings: MkdBuilding[] = [];
+            const allBuildings: MkdBuilding[] = []
             geoObjects.forEach((obj: any) => {
-              const coordKey = obj.properties.get('coordKey');
+              const coordKey = obj.properties.get('coordKey')
               if (coordKey && locationMap[coordKey]) {
                 locationMap[coordKey].forEach(building => {
                   if (!allBuildings.some(b => b.id === building.id)) {
-                    allBuildings.push(building);
+                    allBuildings.push(building)
                   }
-                });
+                })
               }
-            });
-
+            })
             if (allBuildings.length > 0) {
-              setClusterBuildings(allBuildings.map(building => ({ ...building, isSelected: false })));
-              setShowClusterModal(true);
+              setClusterBuildings(allBuildings.map(building => ({ ...building, isSelected: false })))
+              setShowClusterModal(true)
               if (cluster.balloon.isOpen()) {
-                cluster.balloon.close();
+                cluster.balloon.close()
               }
             }
-          };
-          handleClusterInteraction();
-          e.stopPropagation();
-        });
-
+          }
+          handleClusterInteraction()
+          e.stopPropagation()
+        })
         clusterer.events.add('objectsaddtomap', function (e: any) {
-          const clusters = e.get('child').filter((obj: any) => obj.options.getName() === 'cluster');
+          const clusters = e.get('child').filter((obj: any) => obj.options.getName() === 'cluster')
           clusters.forEach((cluster: any) => {
-            const geoObjects = cluster.properties.get('geoObjects');
-            const hasBadCondition = geoObjects.some((obj: any) => obj.properties.get('condition') === 'Неисправный');
+            const geoObjects = cluster.properties.get('geoObjects')
+            const hasBadCondition = geoObjects.some((obj: any) => obj.properties.get('condition') === 'Неисправный')
             if (hasBadCondition) {
-              cluster.options.set('preset', 'islands#redClusterIcons');
+              cluster.options.set('preset', 'islands#redClusterIcons')
             } else {
-              cluster.options.set('preset', 'islands#greenClusterIcons');
+              cluster.options.set('preset', 'islands#greenClusterIcons')
             }
-          });
-        });
-
-        clusterer.add(placemarks);
-        myMap.geoObjects.add(clusterer);
-
-        // Устанавливаем границы для кластеров, но не выходим за общие границы карты
-        const clusterBounds = clusterer.getBounds();
-        const restrictedBounds = [
-          [
-            Math.max(clusterBounds[0][0], parseFloat(mapBoundaries.south_west_lat)),
-            Math.max(clusterBounds[0][1], parseFloat(mapBoundaries.south_west_lng))
-          ],
-          [
-            Math.min(clusterBounds[1][0], parseFloat(mapBoundaries.north_east_lat)),
-            Math.min(clusterBounds[1][1], parseFloat(mapBoundaries.north_east_lng))
-          ]
-        ];
-
+          })
+        })
+        clusterer.add(placemarks)
+        myMap.geoObjects.add(clusterer)
         if (placemarks.length > 1) {
-          myMap.setBounds(restrictedBounds, {
+          myMap.setBounds(clusterer.getBounds(), {
             checkZoomRange: true
-          });
+          })
         } else if (placemarks.length === 1) {
-          const coords = placemarks[0].geometry.getCoordinates();
-          myMap.setCenter(coords, 15);
+          const coords = placemarks[0].geometry.getCoordinates()
+          myMap.setCenter(coords, 15)
         }
       }
     } catch (error) {
-      setError('Ошибка при инициализации карты. Пожалуйста, обновите страницу.');
+      setError('Ошибка при инициализации карты. Пожалуйста, обновите страницу.')
     }
-  };
+  }
 
   useEffect(() => {
     const loadYandexMapsApi = (): void => {
