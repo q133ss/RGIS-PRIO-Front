@@ -335,11 +335,18 @@ const EddsMap: React.FC<EddsMapProps> = ({
         preset: 'islands#blueClusterIcons',
         groupByCoordinates: false,
         clusterDisableClickZoom: true,
+        clusterOpenBalloonOnClick: false,
+        clusterBalloonContentLayout: null,
         clusterHideIconOnBalloonOpen: false,
         geoObjectHideIconOnBalloonOpen: false,
         clusterIconContentLayout: window.ymaps.templateLayoutFactory.createClass(
           '<div style="font-size: 13px; line-height: 26px; font-weight: bold; text-align: center; color: #fff;">{{ properties.geoObjects.length }}</div>'
         )
+      });
+
+      clusterer.events.add('click', (e: any) => {
+        e.preventDefault();
+        e.stopPropagation();
       });
 
       const placemarks: any[] = [];
@@ -404,31 +411,33 @@ const EddsMap: React.FC<EddsMapProps> = ({
                 coords,
                 {
                   hintContent: content,
-                  balloonContent: balloonContent,
+                  //balloonContent: balloonContent,
                   incidentId: incident.id,
                   coordKey: coordKey,
                   itemCount: incidentsAtLocation.length
                 },
                 {
-                  preset: placemarkPreset
+                  preset: placemarkPreset,
+                  balloonCloseButton: false,
+                  hideIconOnBalloonOpen: false
                 }
               );
 
-              placemark.events.add('click', (e: any) => {
-                const target = e.get('target');
-                const key = target.properties.get('coordKey');
-                const items = newLocationMap[key];
-
-                if (items && items.length === 1) {
-                  onViewDetails(items[0]);
-                } else if (items && items.length > 1) {
-                  setClusterIncidents(
-                    items.map((inc) => ({ ...inc, isSelected: false }))
-                  );
-                  setShowClusterModal(true);
-                }
-                e.stopPropagation();
-              });
+              // placemark.events.add('click', (e: any) => {
+              //   const target = e.get('target');
+              //   const key = target.properties.get('coordKey');
+              //   const items = newLocationMap[key];
+              //
+              //   if (items && items.length === 1) {
+              //     onViewDetails(items[0]);
+              //   } else if (items && items.length > 1) {
+              //     setClusterIncidents(
+              //       items.map((inc) => ({ ...inc, isSelected: false }))
+              //     );
+              //     setShowClusterModal(true);
+              //   }
+              //   e.stopPropagation();
+              // });
 
               // Store reference to this placemark
               markersRef.current[coordKey] = placemark;

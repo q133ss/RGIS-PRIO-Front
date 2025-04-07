@@ -22,25 +22,6 @@ interface TableColumn {
     field: string;
 }
 
-interface FilterOptions {
-    cities: City[];
-    streets: Street[];
-    houseNumbers: string[];
-}
-
-interface HeatingPeriodState {
-    heatingPeriods: any[];
-    loading: boolean;
-    error: string | null;
-    currentPage: number;
-    totalPages: number;
-    totalItems: number;
-    success: string;
-    filterCity: string;
-    filterStreet: string;
-    filterHouseNumber: string;
-}
-
 const HeatingPeriods: React.FC = () => {
     const [state, setState] = useState<HeatingPeriodState>({
         heatingPeriods: [],
@@ -61,10 +42,10 @@ const HeatingPeriods: React.FC = () => {
         houseNumber: ''
     });
 
-    const [filterOptions, setFilterOptions] = useState<FilterOptions>({
-        cities: [],
-        streets: [],
-        houseNumbers: []
+    const [filterOptions, setFilterOptions] = useState({
+        cities: [] as string[],
+        streets: [] as string[],
+        houseNumbers: [] as string[]
     });
 
     const [cities, setCities] = useState<City[]>([]);
@@ -286,27 +267,59 @@ const HeatingPeriods: React.FC = () => {
     const loadHeatingPeriods = async (page = 1) => {
         setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
 
+        setActiveFilters({
+            city: '',
+            street: '',
+            houseNumber: ''
+        });
+
+        if (apiRetryCount >= MAX_API_RETRY_ATTEMPTS && !apiSuccessful) {
+            setState(prev => ({
+                ...prev,
+                error: `Не удалось загрузить данные после ${MAX_API_RETRY_ATTEMPTS} попыток. Пожалуйста, попробуйте позже.`,
+                loading: false,
+                success: ''
+            }));
+            return;
+        }
+
         try {
             const data = await getHeatingPeriods(page);
-            extractFilterOptions(data.data);
+            setApiSuccessful(true);
+
+            extractFilterOptions(data.items);
 
             setState(prev => ({
                 ...prev,
-                heatingPeriods: data.data,
-                currentPage: data.current_page,
-                totalPages: data.last_page,
-                totalItems: data.total,
+                heatingPeriods: data.items,
+                currentPage: data.currentPage,
+                totalPages: data.totalPages,
+                totalItems: data.totalItems,
                 loading: false,
                 error: null,
                 success: 'success'
             }));
         } catch (error) {
-            setState(prev => ({
-                ...prev,
-                error: 'Ошибка при загрузке данных',
-                loading: false,
-                success: ''
-            }));
+            const errorMsg = String(error);
+
+            if (errorMsg.includes('авторизац') || errorMsg.includes('Unauthorized') || errorMsg.includes('Unauthenticated')) {
+                setAuthError(true);
+                setState(prev => ({
+                    ...prev,
+                    error: 'Ошибка авторизации. Пожалуйста, обновите страницу или войдите в систему заново.',
+                    loading: false,
+                    success: ''
+                }));
+            } else {
+                setApiRetryCount(prev => prev + 1);
+
+                setState(prev => ({
+                    ...prev,
+                    error: `Ошибка при получении данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
+                    loading: false,
+                    success: ''
+                }));
+            }
         }
     };
 
@@ -354,25 +367,19 @@ const HeatingPeriods: React.FC = () => {
     };
 
     const extractFilterOptions = (data: any[]) => {
-        const citiesMap = new Map<number, City>();
-        const streetsMap = new Map<number, Street>();
+        const cities = new Set<string>();
+        const streets = new Set<string>();
         const houseNumbers = new Set<string>();
 
         data.forEach(item => {
-            if (item.address?.street?.city) {
-                citiesMap.set(item.address.street.city.id, item.address.street.city);
-            }
-            if (item.address?.street) {
-                streetsMap.set(item.address.street.id, item.address.street);
-            }
-            if (item.address?.house_number) {
-                houseNumbers.add(item.address.house_number);
-            }
+            if (item.address?.street?.city?.name) cities.add(item.address.street.city.name);
+            if (item.address?.street?.name) streets.add(item.address.street.name);
+            if (item.address?.house_number) houseNumbers.add(item.address.house_number);
         });
 
         setFilterOptions({
-            cities: Array.from(citiesMap.values()),
-            streets: Array.from(streetsMap.values()),
+            cities: Array.from(cities).sort(),
+            streets: Array.from(streets).sort(),
             houseNumbers: Array.from(houseNumbers).sort()
         });
     };
@@ -381,10 +388,28 @@ const HeatingPeriods: React.FC = () => {
         setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
 
         try {
+            let city_id: number | undefined;
+            let street_id: number | undefined;
+            let house_number: string | undefined;
+
+            if (activeFilters.city) {
+                const cityObj = cities.find(c => c.name === activeFilters.city);
+                if (cityObj) city_id = cityObj.id;
+            }
+
+            if (activeFilters.street) {
+                const streetObj = streets.find(s => s.name === activeFilters.street);
+                if (streetObj) street_id = streetObj.id;
+            }
+
+            if (activeFilters.houseNumber) {
+                house_number = activeFilters.houseNumber;
+            }
+
             const filteredData = await filterHeatingPeriods(
-                activeFilters.city ? Number(activeFilters.city) : undefined,
-                activeFilters.street ? Number(activeFilters.street) : undefined,
-                activeFilters.houseNumber || undefined
+                city_id,
+                street_id,
+                house_number
             );
 
             setState(prev => ({
@@ -397,10 +422,14 @@ const HeatingPeriods: React.FC = () => {
                 totalPages: 1,
                 totalItems: filteredData.length
             }));
+
+            setApiSuccessful(true);
         } catch (error) {
+            setApiRetryCount(prev => prev + 1);
+
             setState(prev => ({
                 ...prev,
-                error: 'Ошибка при фильтрации данных',
+                error: `Ошибка при фильтрации данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
                 loading: false,
                 success: ''
             }));
@@ -408,16 +437,10 @@ const HeatingPeriods: React.FC = () => {
     };
 
     const handleFilterChange = (filterType: 'city' | 'street' | 'houseNumber', value: string) => {
-        setActiveFilters(prev => {
-            const newFilters = { ...prev, [filterType]: value };
-
-            // Сбрасываем зависимые фильтры
-            if (filterType === 'city') {
-                newFilters.street = '';
-            }
-
-            return newFilters;
-        });
+        setActiveFilters(prev => ({
+            ...prev,
+            [filterType]: value
+        }));
     };
 
     const resetFilters = () => {
@@ -426,6 +449,7 @@ const HeatingPeriods: React.FC = () => {
             street: '',
             houseNumber: ''
         });
+
         loadHeatingPeriods();
     };
 
@@ -702,12 +726,12 @@ const HeatingPeriods: React.FC = () => {
                                                 <Form.Select
                                                     value={activeFilters.city}
                                                     onChange={(e) => handleFilterChange('city', e.target.value)}
-                                                    disabled={state.loading}
+                                                    disabled={state.loading || authError}
                                                 >
                                                     <option value="">Все города</option>
                                                     {filterOptions.cities.map(city => (
-                                                        <option key={city.id} value={city.id}>
-                                                            {city.name}
+                                                        <option key={city} value={city}>
+                                                            {city}
                                                         </option>
                                                     ))}
                                                 </Form.Select>
@@ -719,19 +743,14 @@ const HeatingPeriods: React.FC = () => {
                                                 <Form.Select
                                                     value={activeFilters.street}
                                                     onChange={(e) => handleFilterChange('street', e.target.value)}
-                                                    disabled={state.loading || !activeFilters.city}
+                                                    disabled={state.loading || authError || !activeFilters.city}
                                                 >
                                                     <option value="">Все улицы</option>
-                                                    {filterOptions.streets
-                                                        .filter(street =>
-                                                            !activeFilters.city ||
-                                                            street.city_id.toString() === activeFilters.city
-                                                        )
-                                                        .map(street => (
-                                                            <option key={street.id} value={street.id}>
-                                                                {street.name}
-                                                            </option>
-                                                        ))}
+                                                    {filterOptions.streets.map(street => (
+                                                        <option key={street} value={street}>
+                                                            {street}
+                                                        </option>
+                                                    ))}
                                                 </Form.Select>
                                             </Form.Group>
                                         </Col>
@@ -741,7 +760,7 @@ const HeatingPeriods: React.FC = () => {
                                                 <Form.Select
                                                     value={activeFilters.houseNumber}
                                                     onChange={(e) => handleFilterChange('houseNumber', e.target.value)}
-                                                    disabled={state.loading}
+                                                    disabled={state.loading || authError}
                                                 >
                                                     <option value="">Все дома</option>
                                                     {filterOptions.houseNumbers.map(houseNumber => (
@@ -757,7 +776,7 @@ const HeatingPeriods: React.FC = () => {
                                                 <Button
                                                     variant="primary"
                                                     onClick={applyFilters}
-                                                    disabled={state.loading}
+                                                    disabled={state.loading || authError}
                                                 >
                                                     <i className="ti ti-filter me-1"></i>
                                                     Применить
@@ -765,7 +784,7 @@ const HeatingPeriods: React.FC = () => {
                                                 <Button
                                                     variant="outline-secondary"
                                                     onClick={resetFilters}
-                                                    disabled={state.loading ||
+                                                    disabled={state.loading || authError ||
                                                         (!activeFilters.city && !activeFilters.street && !activeFilters.houseNumber)}
                                                 >
                                                     <i className="ti ti-filter-off me-1"></i>
