@@ -18,6 +18,7 @@ export interface ApiHeatSource {
   year?: string;
   consumers?: string;
   settlement?: string;
+  passport?: Passport;
   // Добавленные свойства
   region?: string;
   address_id?: number;
@@ -76,6 +77,17 @@ export interface ApiHeatSource {
   };
 }
 
+interface Passport {
+  id: number;
+  hs_id: number;
+  passport_number: string;
+  issue_date: string;
+  technical_characteristics?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+
 // Интерфейс для отображения данных в компоненте
 export interface HeatSource {
   id: number;
@@ -93,6 +105,8 @@ export interface HeatSource {
   yearBuilt: string;
   data_transmission_start_date?: string;
   consumers: string;
+  passport?: Passport;
+  supply_address_ids?: number[];
 }
 
 // Интерфейс для состояния компонента

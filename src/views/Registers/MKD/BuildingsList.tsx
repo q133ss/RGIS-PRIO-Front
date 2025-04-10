@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import {
     getMultiApartmentBuildings,
     searchMultiApartmentBuildings,
-    exportMultiApartmentBuildingsToExcel,
     initializeApi,
     createMultiApartmentBuilding,
     updateMultiApartmentBuilding,
@@ -14,16 +13,19 @@ import {
     getManagementCompanies,
     getTechnicalConditions,
     getAddresses,
-    searchAddresses
-} from '../../../services/mkdApi'; // Added searchAddresses import
+    searchAddresses,
+    requestExport,
+    checkExportStatus,
+    downloadExport
+} from '../../../services/mkdApi';
 import {
     MultiApartmentBuilding,
     MultiApartmentBuildingState,
     ApiMultiApartmentBuildingRequest,
     TableColumn,
     BuildingFormData
-} from '../../../types/multiApartmentBuilding'; // Ensure this path is correct
-import DeleteModal from "../../../Common/DeleteModal"; // Ensure this path is correct
+} from '../../../types/multiApartmentBuilding';
+import DeleteModal from "../../../Common/DeleteModal";
 
 interface ManagementCompany {
     id: number;
@@ -45,6 +47,8 @@ interface City {
 }
 
 const MAX_API_RETRY_ATTEMPTS = 3;
+const EXPORT_STATUS_CHECK_INTERVAL = 2000; // 2 seconds
+const MAX_EXPORT_STATUS_CHECKS = 30; // 60 seconds total
 
 const BuildingsList: React.FC = () => {
     const [state, setState] = useState<MultiApartmentBuildingState>({
@@ -57,6 +61,12 @@ const BuildingsList: React.FC = () => {
         totalPages: 1,
         totalItems: 0,
         success: ''
+    });
+
+    const [exportState, setExportState] = useState({
+        loading: false,
+        progress: '',
+        error: null
     });
 
     const [activeFilters, setActiveFilters] = useState({
@@ -115,11 +125,9 @@ const BuildingsList: React.FC = () => {
         cadastreNumber: ''
     });
 
-    // Состояния, связанные с поиском адреса
     const [addressSearchQuery, setAddressSearchQuery] = useState('');
     const [isAddressSearching, setIsAddressSearching] = useState(false);
     const [selectedCity, setSelectedCity] = useState<City | null>(null);
-    // const [cities, setCities] = useState<City[]>([]);  <-- УДАЛЕНО, чтобы не возникало ошибки "значение никогда не читается"
     const [addressSearchResults, setAddressSearchResults] = useState<{id: number, fullAddress: string}[]>([]);
     const [showAddressSearchResults, setShowAddressSearchResults] = useState(false);
 
@@ -127,7 +135,6 @@ const BuildingsList: React.FC = () => {
     const tableRef = useRef<HTMLTableElement>(null);
     const addressSearchRef = useRef<HTMLDivElement>(null);
 
-    // Закрываем выпадающий список адресов при клике вне его области
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (addressSearchRef.current && !addressSearchRef.current.contains(event.target as Node)) {
@@ -155,12 +162,8 @@ const BuildingsList: React.FC = () => {
         return found ? found.id : 1;
     };
 
-    // Загрузка (или установка) текущего города
     const loadCities = async () => {
         try {
-            // Если нужно получить города с бэкенда – вызовите метод getCities или подобный
-            // Например: const cityData = await getCities();
-            // Для примера, жёстко зададим Воронеж:
             setSelectedCity({ id: 2, name: 'Воронеж', region_id: null });
         } catch (error) {
             console.error('Error loading cities:', error);
@@ -178,13 +181,11 @@ const BuildingsList: React.FC = () => {
         }
     };
 
-    // Функция для поиска адресов
     const handleAddressSearch = async () => {
         if (!addressSearchQuery.trim() || !selectedCity) return;
         
         try {
             setIsAddressSearching(true);
-            // Вызываем searchAddresses, передавая ID города и поисковый запрос
             const results = await searchAddresses(selectedCity.id, addressSearchQuery);
             setAddressSearchResults(results);
             setShowAddressSearchResults(true);
@@ -195,7 +196,6 @@ const BuildingsList: React.FC = () => {
         }
     };
 
-    // Обработка выбора адреса из результатов поиска
     const handleSelectAddress = (address: {id: number, fullAddress: string}) => {
         setFormData(prev => ({
             ...prev,
@@ -250,7 +250,6 @@ const BuildingsList: React.FC = () => {
     };
 
     useEffect(() => {
-        // Загружаем «город» при первом рендере
         loadCities();
 
         const savedColumns = localStorage.getItem('buildingsListColumns');
@@ -260,7 +259,7 @@ const BuildingsList: React.FC = () => {
                 setColumns(parsedColumns);
                 setIsTableCustomized(true);
             } catch (e) {
-                // Ошибка чтения сохранённых настроек
+                // Error reading saved settings
             }
         }
     }, []);
@@ -271,13 +270,12 @@ const BuildingsList: React.FC = () => {
         }
     }, [columns, isTableCustomized]);
 
-    // Дебаунс-поиск адреса
     useEffect(() => {
         const delaySearch = setTimeout(() => {
             if (addressSearchQuery.trim()) {
                 handleAddressSearch();
             }
-        }, 500); // Задержка в 500 мс
+        }, 500);
         
         return () => clearTimeout(delaySearch);
     }, [addressSearchQuery]);
@@ -645,37 +643,103 @@ const BuildingsList: React.FC = () => {
         }
     };
 
-    const handleExportToExcel = async () => {
+    const handleExport = async (format: 'csv' | 'xlsx') => {
         try {
-            setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
-
-            const now = new Date();
-            const dateStr = `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
-            const timeStr = `${now.getHours()}-${now.getMinutes()}`;
-            const blob = await exportMultiApartmentBuildingsToExcel();
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `МКД_${dateStr}_${timeStr}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            setState(prev => ({
-                ...prev,
-                loading: false,
-                success: 'success',
+            setExportState({
+                loading: true,
+                progress: 'Инициализация экспорта...',
                 error: null
-            }));
+            });
+
+            // Step 1: Request export
+            const exportResult = await requestExport(format === 'csv' ? 'mkd/csv' : 'mkd/xlsx');
+            
+            if (!exportResult || !exportResult.export_id) {
+                throw new Error('Не удалось получить ID экспорта');
+            }
+            
+            const exportId = exportResult.export_id;
+            
+            // Step 2: Poll for status
+            let statusCheckCount = 0;
+            let completed = false;
+            
+            const checkExportStatusInterval = setInterval(async () => {
+                try {
+                    statusCheckCount++;
+                    
+                    setExportState(prev => ({
+                        ...prev,
+                        progress: `Подготовка файла (${statusCheckCount}/${MAX_EXPORT_STATUS_CHECKS})...`
+                    }));
+                    
+                    const statusResult = await checkExportStatus(exportId);
+                    
+                    if (statusResult.status === 'completed') {
+                        clearInterval(checkExportStatusInterval);
+                        completed = true;
+                        
+                        setExportState(prev => ({
+                            ...prev,
+                            progress: 'Скачивание файла...'
+                        }));
+                        
+                        // Step 3: Download the file
+                        const blob = await downloadExport(exportId);
+                        
+                        // Create filename with date/time
+                        const now = new Date();
+                        const dateStr = `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
+                        const timeStr = `${now.getHours()}-${now.getMinutes()}`;
+                        const fileExt = format === 'csv' ? 'csv' : 'xlsx';
+                        const filename = `МКД_${dateStr}_${timeStr}.${fileExt}`;
+                        
+                        // Create download link
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        
+                        // Cleanup
+                        URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        setExportState({
+                            loading: false,
+                            progress: '',
+                            error: null
+                        });
+                    }
+                } catch (error) {
+                    clearInterval(checkExportStatusInterval);
+                    console.error('Error checking export status:', error);
+                    setExportState({
+                        loading: false,
+                        progress: '',
+                        error: `Ошибка при проверке статуса экспорта: ${error}`
+                    });
+                }
+                
+                // Stop polling after max attempts
+                if (statusCheckCount >= MAX_EXPORT_STATUS_CHECKS && !completed) {
+                    clearInterval(checkExportStatusInterval);
+                    setExportState({
+                        loading: false,
+                        progress: '',
+                        error: `Превышено время ожидания экспорта. Попробуйте позже или обратитесь к администратору.`
+                    });
+                }
+            }, EXPORT_STATUS_CHECK_INTERVAL);
+            
         } catch (error) {
-            setApiRetryCount(prev => prev + 1);
-            setState(prev => ({
-                ...prev,
-                error: `Не удалось экспортировать данные. Пожалуйста, попробуйте позже.`,
+            console.error('Export error:', error);
+            setExportState({
                 loading: false,
-                success: ''
-            }));
+                progress: '',
+                error: `Ошибка экспорта: ${error}`
+            });
         }
     };
 
@@ -700,7 +764,6 @@ const BuildingsList: React.FC = () => {
                 await loadReferences();
             }
             
-            // Для надёжности загружаем все адреса
             await loadAddresses();
 
             const details = await getMultiApartmentBuildingDetails(id);
@@ -714,7 +777,6 @@ const BuildingsList: React.FC = () => {
                 formData.address_id = rawDetails.address_id;
             }
             
-            // Ставим в поле поиска адресов текущий адрес
             setAddressSearchQuery(formData.address);
 
             setFormData(formData);
@@ -738,7 +800,7 @@ const BuildingsList: React.FC = () => {
             }
             await loadAddresses();
         } catch (error) {
-            // Обработка ошибки при загрузке справочников / адресов
+            // Handle error loading references/addresses
         }
         setFormLoading(false);
 
@@ -756,7 +818,6 @@ const BuildingsList: React.FC = () => {
             cadastreNumber: ""
         });
         
-        // Сброс поиска адресов
         setAddressSearchQuery('');
         setAddressSearchResults([]);
         
@@ -861,7 +922,7 @@ const BuildingsList: React.FC = () => {
                     try {
                         await loadReferences();
                     } catch (refError) {
-                       // Обработать ошибку, если справочники не загрузились
+                       // Handle reference loading error
                     }
                 }
 
@@ -1085,6 +1146,19 @@ const BuildingsList: React.FC = () => {
                                     </div>
                                 </Alert>
                             )}
+                            
+                            {exportState.error && (
+                                <Alert variant="danger" onClose={() => setExportState(prev => ({ ...prev, error: null }))} dismissible>
+                                    {exportState.error}
+                                </Alert>
+                            )}
+                            
+                            {exportState.loading && (
+                                <Alert variant="info" className="d-flex align-items-center">
+                                    <Spinner animation="border" size="sm" className="me-2" />
+                                    <div>{exportState.progress}</div>
+                                </Alert>
+                            )}
 
                             <Row className="justify-content-between mb-3 g-3">
                                 <Col sm="auto">
@@ -1142,9 +1216,19 @@ const BuildingsList: React.FC = () => {
                                         <Button variant="primary" onClick={handleAddNew} disabled={state.loading || authError}>
                                             <i className="ph-duotone ph-plus me-1"></i>ДОБАВИТЬ
                                         </Button>
-                                        <Button variant="secondary" onClick={handleExportToExcel} disabled={state.loading || authError}>
-                                            <i className="ph-duotone ph-file-excel me-1"></i>СОХРАНИТЬ В CSV
-                                        </Button>
+                                        <Dropdown>
+                                            <Dropdown.Toggle variant="secondary" disabled={state.loading || authError || exportState.loading}>
+                                                <i className="ph-duotone ph-file-export me-1"></i>ЭКСПОРТ
+                                            </Dropdown.Toggle>
+                                            <Dropdown.Menu>
+                                                <Dropdown.Item onClick={() => handleExport('csv')}>
+                                                    <i className="ph-duotone ph-file-csv me-2"></i>Экспорт в CSV
+                                                </Dropdown.Item>
+                                                <Dropdown.Item onClick={() => handleExport('xlsx')}>
+                                                    <i className="ph-duotone ph-file-xls me-2"></i>Экспорт в EXCEL
+                                                </Dropdown.Item>
+                                            </Dropdown.Menu>
+                                        </Dropdown>
                                     </div>
                                 </Col>
                             </Row>
@@ -1180,7 +1264,6 @@ const BuildingsList: React.FC = () => {
                 </Col>
             </Row>
 
-            {/* Offcanvas для настроек столбцов */}
             <Offcanvas show={showColumnsSettings} onHide={() => setShowColumnsSettings(false)} placement="end">
                 <Offcanvas.Header closeButton>
                     <Offcanvas.Title className="f-w-600">Настройки таблицы</Offcanvas.Title>
@@ -1208,7 +1291,6 @@ const BuildingsList: React.FC = () => {
                 </Offcanvas.Body>
             </Offcanvas>
 
-            {/* Offcanvas для просмотра деталей */}
             <Offcanvas show={showDetailsModal} onHide={() => setShowDetailsModal(false)} placement="end">
                 <Offcanvas.Header closeButton>
                     <Offcanvas.Title className="f-w-600 text-truncate">Детали МКД</Offcanvas.Title>
@@ -1289,7 +1371,6 @@ const BuildingsList: React.FC = () => {
                 </Offcanvas.Body>
             </Offcanvas>
 
-            {/* Offcanvas для создания/редактирования */}
             <Offcanvas
                 show={showEditOffcanvas}
                 onHide={() => {
@@ -1323,7 +1404,6 @@ const BuildingsList: React.FC = () => {
                                     <Col xs={12}><Alert variant="danger">{formError}</Alert></Col>
                                 )}
                                 
-                                {/* Поле ввода для поиска адреса */}
                                 <Col xs={12}>
                                     <Form.Group controlId="building-address-search">
                                         <Form.Label>Поиск адреса*</Form.Label>
@@ -1352,7 +1432,6 @@ const BuildingsList: React.FC = () => {
                                                 )}
                                             </InputGroup>
                                             
-                                            {/* Результаты поиска */}
                                             {showAddressSearchResults && addressSearchResults.length > 0 && (
                                                 <div className="address-search-results">
                                                     {addressSearchResults.map(address => (
@@ -1367,7 +1446,6 @@ const BuildingsList: React.FC = () => {
                                                 </div>
                                             )}
                                             
-                                            {/* Сообщение о том, что ничего не найдено */}
                                             {showAddressSearchResults && addressSearchQuery.trim() && addressSearchResults.length === 0 && !isAddressSearching && (
                                                 <div className="address-search-results">
                                                     <div className="address-search-no-results">
@@ -1380,7 +1458,6 @@ const BuildingsList: React.FC = () => {
                                     </Form.Group>
                                 </Col>
                                 
-                                {/* Дропдаун как запасной вариант выбора адреса */}
                                 <Col xs={12}>
                                     <Form.Group controlId="building-address">
                                         <Form.Label>Или выберите из списка</Form.Label>
@@ -1534,7 +1611,6 @@ const BuildingsList: React.FC = () => {
                 .offcanvas-footer { flex-shrink: 0; }
                 .offcanvas.show { height: 100vh; }
 
-                /* Стили для поиска адреса */
                 .address-search-results {
                     position: absolute;
                     top: 100%;

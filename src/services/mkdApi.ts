@@ -755,3 +755,95 @@ export const updateBulkMkdSchedules = async (buildingIds: number[], scheduleData
     throw error;
   }
 };
+
+// Export-related functions to add to mkdApi.ts
+
+/**
+ * Initiates an export request for MKD data
+ * @param format The endpoint for export (e.g., 'mkd/csv', 'mkd/xlsx')
+ * @returns Promise with export ID
+ */
+export const requestExport = async (format: string): Promise<{ export_id: string, message: string }> => {
+  try {
+    console.log(`Requesting ${format} export...`);
+    const response = await fetchAPI(`/exports/${format}`, {
+      method: 'POST'
+    });
+    
+    console.log('Export request response:', response);
+    
+    if (!response || !response.export_id) {
+      throw new Error('Invalid response from export request');
+    }
+    
+    return {
+      export_id: response.export_id,
+      message: response.message || 'Запрос на экспорт создан'
+    };
+  } catch (error) {
+    console.error(`Error requesting ${format} export:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Checks the status of an export request
+ * @param exportId The ID of the export job
+ * @returns Promise with status information
+ */
+export const checkExportStatus = async (exportId: string): Promise<{ status: string, download_url?: string }> => {
+  try {
+    console.log(`Checking status for export ID: ${exportId}`);
+    const response = await fetchAPI(`/exports/${exportId}/status`);
+    
+    console.log('Export status response:', response);
+    
+    if (!response || !response.status) {
+      throw new Error('Invalid status response');
+    }
+    
+    return {
+      status: response.status,
+      download_url: response.download_url
+    };
+  } catch (error) {
+    console.error(`Error checking export status for ID ${exportId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Downloads an export file by ID
+ * @param exportId The ID of the export job
+ * @returns Promise with file blob
+ */
+export const downloadExport = async (exportId: string): Promise<Blob> => {
+  try {
+    console.log(`Downloading export ID: ${exportId}`);
+    
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      throw new Error('Отсутствует токен авторизации');
+    }
+    
+    const response = await fetch(`${API_URL}/exports/${exportId}/download`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Download failed with status: ${response.status}`);
+      throw new Error(`Ошибка скачивания: ${response.status}`);
+    }
+    
+    // Get content type to determine format
+    const contentType = response.headers.get('Content-Type');
+    console.log(`Download completed. Content-Type: ${contentType}`);
+    
+    return await response.blob();
+  } catch (error) {
+    console.error(`Error downloading export ID ${exportId}:`, error);
+    throw error;
+  }
+};
