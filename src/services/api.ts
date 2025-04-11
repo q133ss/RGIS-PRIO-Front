@@ -1763,18 +1763,19 @@ export const uploadLoginBackground = async (file: File): Promise<boolean> => {
 // Получение URL фона страницы входа (публичный эндпоинт)
 export const getLoginBackgroundUrl = async (): Promise<string | null> => {
   try {
-    // Пытаемся получить настройки без авторизации
-    const response = await fetch(`${API_URL}/settings/settings`);
+    // Используем отдельный эндпоинт для получения фона логина
+    const response = await fetch(`${API_URL}/login-background`);
     
     if (!response.ok) {
+      console.log("Ответ от API не ок:", response.status);
       return null;
     }
     
-    const settings = await response.json();
-    const loginImgSetting = Array.isArray(settings) ? 
-      settings.find(s => s.key === 'login_img') : null;
+    const data = await response.json();
+    console.log("Полученные данные фона:", data);
     
-    return loginImgSetting?.value || null;
+    // Возвращаем src из ответа API
+    return data.src || null;
   } catch (error) {
     console.error('Ошибка получения URL фона страницы входа:', error);
     return null;
@@ -2529,3 +2530,4 @@ export const deleteEddsIncident = async (id: number): Promise<boolean> => {
     throw error;
   }
 };
+
