@@ -9,8 +9,6 @@ import {
   getLoginBackgroundUrl
 } from "../../services/api";
 
-const DEFAULT_BACKGROUND = "/assets/images/authentication/img-auth-bg.jpg";
-
 const Login: React.FC = () => {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -18,7 +16,8 @@ const Login: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [redirecting, setRedirecting] = useState(false);
-  const [backgroundImage, setBackgroundImage] = useState<string>(DEFAULT_BACKGROUND);
+  const [backgroundImage, setBackgroundImage] = useState<string>("");
+  const [backgroundLoading, setBackgroundLoading] = useState(true);
 
   // Проверяем, авторизован ли пользователь при загрузке компонента
   useEffect(() => {
@@ -30,14 +29,22 @@ const Login: React.FC = () => {
   // Загружаем фоновое изображение из API
   useEffect(() => {
     const loadBackgroundImage = async () => {
+      setBackgroundLoading(true);
       try {
+        console.log("Начинаем загрузку фона...");
         const imageUrl = await getLoginBackgroundUrl();
-        // Если с бэка пришёл корректный url – используем его. Иначе оставим дефолтный.
+        console.log("Получен URL фона:", imageUrl);
+        
         if (imageUrl) {
           setBackgroundImage(imageUrl);
+          console.log("Фоновое изображение установлено:", imageUrl);
+        } else {
+          console.log("API вернул пустой URL для фона. Будет использован цвет по умолчанию.");
         }
       } catch (error) {
         console.error("Не удалось загрузить фон страницы входа:", error);
+      } finally {
+        setBackgroundLoading(false);
       }
     };
     
@@ -78,11 +85,16 @@ const Login: React.FC = () => {
     <React.Fragment>
       <div
         className="auth-main v2"
-        style={{
+        style={backgroundImage ? {
           backgroundImage: `url(${backgroundImage})`,
           backgroundSize: "cover",
           backgroundPosition: "center",
           backgroundRepeat: "no-repeat",
+          minHeight: "100vh"
+        } : {
+          // Простой светлый фон если изображение не найдено
+          backgroundColor: "#f8f9fa",
+          minHeight: "100vh"
         }}
       >
         <div className="bg-overlay bg-dark-custom"></div>

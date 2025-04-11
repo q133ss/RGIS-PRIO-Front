@@ -7,7 +7,9 @@ import {
   getIncidentResourceTypes,
   getOrganizations,
   getCities,
-  api
+  api,
+  getIncidentTypes,
+  createIncident
 } from '../../services/api';
 import { CommunalServicesMapItem } from '../../services/api';
 
@@ -123,6 +125,15 @@ interface AreaData {
   color?: string;
 }
 
+interface ComplaintFormData {
+  title: string;
+  description: string;
+  incident_type_id: number | null;
+  incident_resource_type_id: number | null;
+  address_ids: number[];
+  is_complaint: boolean;
+}
+
 const CommunalServicesMap: React.FC = () => {
   const [mapData, setMapData] = useState<CommunalServicesMapItem[]>([]);
   const [filteredMapData, setFilteredMapData] = useState<CommunalServicesMapItem[]>([]);
@@ -141,6 +152,7 @@ const CommunalServicesMap: React.FC = () => {
   const [cities, setCities] = useState<Array<any>>([]);
   const [organizations, setOrganizations] = useState<Array<any>>([]);
   const [resourceTypes, setResourceTypes] = useState<Array<any>>([]);
+  const [incidentTypes, setIncidentTypes] = useState<Array<any>>([]);
   const [houseTypes, setHouseTypes] = useState<Array<any>>([]);
 
   const mapRef = useRef<HTMLDivElement>(null);
@@ -149,14 +161,17 @@ const CommunalServicesMap: React.FC = () => {
   const [showAreaModal, setShowAreaModal] = useState<boolean>(false);
   const [selectedArea, setSelectedArea] = useState<{title: string, description: string} | null>(null);
 
-  // const [mapBoundaries, setMapBoundaries] = useState<MapBoundaries>({
-  //   center_lat: 51.660772,
-  //   center_lng: 39.200289,
-  //   south_west_lat: 51.55,
-  //   south_west_lng: 39.05,
-  //   north_east_lat: 51.75,
-  //   north_east_lng: 39.45
-  // });
+  // New state for the add complaint modal
+  const [showComplaintModal, setShowComplaintModal] = useState<boolean>(false);
+  const [submittingComplaint, setSubmittingComplaint] = useState<boolean>(false);
+  const [complaintForm, setComplaintForm] = useState<ComplaintFormData>({
+    title: '',
+    description: '',
+    incident_type_id: null,
+    incident_resource_type_id: null,
+    address_ids: [],
+    is_complaint: true
+  });
 
   const [mapBoundaries, setMapBoundaries] = useState<MapBoundaries>();
 
@@ -176,23 +191,6 @@ const CommunalServicesMap: React.FC = () => {
       setError(null);
 
       await initializeApi();
-
-      // try {
-      //   const userProfile = await api.get<UserProfile>('/me');
-      //
-      //   if (userProfile.center_lat && userProfile.center_lng) {
-      //     setMapBoundaries({
-      //       center_lat: parseFloat(userProfile.center_lat),
-      //       center_lng: parseFloat(userProfile.center_lng),
-      //       south_west_lat: parseFloat(userProfile.south_west_lat),
-      //       south_west_lng: parseFloat(userProfile.south_west_lng),
-      //       north_east_lat: parseFloat(userProfile.north_east_lat),
-      //       north_east_lng: parseFloat(userProfile.north_east_lng)
-      //     });
-      //   }
-      // } catch (err) {
-      //   // Error handled silently
-      // }
 
       const communalData = await getCommunalServicesMapData();
       if (communalData && communalData.length > 0) {
@@ -263,6 +261,17 @@ const CommunalServicesMap: React.FC = () => {
         }
       } catch (err) {
         setResourceTypes([]);
+      }
+
+      try {
+        const incidentTypesResult = await getIncidentTypes();
+        if (Array.isArray(incidentTypesResult)) {
+          setIncidentTypes(incidentTypesResult);
+        } else {
+          setIncidentTypes([]);
+        }
+      } catch (err) {
+        setIncidentTypes([]);
       }
 
       setHouseTypes([
@@ -410,7 +419,7 @@ const CommunalServicesMap: React.FC = () => {
   };
 
   const initMap = (dataToShow: CommunalServicesMapItem[] = filteredMapData): void => {
-    if (!mapRef.current || !window.ymaps || dataToShow.length === 0) {
+    if (!mapRef.current || !window.ymaps || dataToShow.length === 0 || !mapBoundaries) {
       return;
     }
 
@@ -703,6 +712,82 @@ const CommunalServicesMap: React.FC = () => {
     return address;
   };
 
+  // Function to open complaint modal and set the address
+  const openComplaintModal = (house: CommunalServicesMapItem): void => {
+    if (house && house.address && house.address.id) {
+      setComplaintForm({
+        title: '',
+        description: '',
+        incident_type_id: null,
+        incident_resource_type_id: null,
+        address_ids: [house.address.id],
+        is_complaint: true
+      });
+      setShowComplaintModal(true);
+      setShowModal(false);
+    } else {
+      setNotificationMessage('Ошибка: Невозможно определить адрес дома');
+      setShowNotification(true);
+    }
+  };
+
+  // Handle complaint form input changes
+  const handleComplaintInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>): void => {
+    const { name, value } = e.target;
+    setComplaintForm({
+      ...complaintForm,
+      [name]: value
+    });
+  };
+
+  // Handle complaint type and resource type select changes
+  const handleComplaintSelectChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
+    const { name, value } = e.target;
+    setComplaintForm({
+      ...complaintForm,
+      [name]: value ? parseInt(value, 10) : null
+    });
+  };
+
+  // Submit complaint
+  const submitComplaint = async (): Promise<void> => {
+    try {
+      setSubmittingComplaint(true);
+      
+      if (!complaintForm.title || !complaintForm.description || !complaintForm.incident_type_id || !complaintForm.incident_resource_type_id) {
+        setNotificationMessage('Пожалуйста, заполните все обязательные поля');
+        setShowNotification(true);
+        setSubmittingComplaint(false);
+        return;
+      }
+
+      const response = await createIncident(complaintForm);
+      
+      setShowComplaintModal(false);
+      setComplaintForm({
+        title: '',
+        description: '',
+        incident_type_id: null,
+        incident_resource_type_id: null,
+        address_ids: [],
+        is_complaint: true
+      });
+      
+      setNotificationMessage('Жалоба успешно отправлена');
+      setShowNotification(true);
+      
+      // Refresh data to show new complaint
+      await fetchCommunalServicesData();
+      
+    } catch (err) {
+      const errorMessage = err instanceof Error ? err.message : 'Ошибка при отправке жалобы';
+      setNotificationMessage(`Ошибка: ${errorMessage}`);
+      setShowNotification(true);
+    } finally {
+      setSubmittingComplaint(false);
+    }
+  };
+
   return (
       <React.Fragment>
         <div className="page-header">
@@ -939,6 +1024,7 @@ const CommunalServicesMap: React.FC = () => {
           </Col>
         </Row>
 
+        {/* House Details Modal */}
         <Modal show={showModal} onHide={handleCloseModal} size="lg">
           <Modal.Header closeButton className="bg-light">
             <Modal.Title>
@@ -1227,12 +1313,22 @@ const CommunalServicesMap: React.FC = () => {
             )}
           </Modal.Body>
           <Modal.Footer>
+            {selectedItem && (
+              <Button 
+                variant="warning" 
+                className="me-auto"
+                onClick={() => openComplaintModal(selectedItem)}
+              >
+                <i className="fas fa-comment-alt me-1"></i> Отправить жалобу
+              </Button>
+            )}
             <Button variant="secondary" onClick={handleCloseModal}>
               Закрыть
             </Button>
           </Modal.Footer>
         </Modal>
 
+        {/* House Cluster Modal */}
         <Modal show={showClusterModal} onHide={handleCloseClusterModal} size="lg" backdrop="static">
           <Modal.Header closeButton className="bg-light">
             <Modal.Title>Дома в данной точке ({clusterHouses.length})</Modal.Title>
@@ -1278,16 +1374,29 @@ const CommunalServicesMap: React.FC = () => {
                           <small className="text-muted">
                             Обновлен: {formatDate(house.updated_at)}
                           </small>
-                          <Button
-                              variant="outline-primary"
-                              size="sm"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSelectClusterItem(house.id);
-                              }}
-                          >
-                            Подробнее
-                          </Button>
+                          <div>
+                            <Button
+                                variant="warning"
+                                size="sm"
+                                className="me-2"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  openComplaintModal(house);
+                                }}
+                            >
+                              <i className="fas fa-comment-alt me-1"></i> Жалоба
+                            </Button>
+                            <Button
+                                variant="outline-primary"
+                                size="sm"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleSelectClusterItem(house.id);
+                                }}
+                            >
+                              Подробнее
+                            </Button>
+                          </div>
                         </div>
                       </div>
                   ))}
@@ -1303,6 +1412,7 @@ const CommunalServicesMap: React.FC = () => {
           </Modal.Footer>
         </Modal>
 
+        {/* Area Info Modal */}
         <Modal show={showAreaModal} onHide={() => setShowAreaModal(false)}>
           <Modal.Header closeButton className="bg-light">
             <Modal.Title>{selectedArea?.title || 'Информация об области'}</Modal.Title>
@@ -1315,6 +1425,114 @@ const CommunalServicesMap: React.FC = () => {
           <Modal.Footer>
             <Button variant="secondary" onClick={() => setShowAreaModal(false)}>
               Закрыть
+            </Button>
+          </Modal.Footer>
+        </Modal>
+
+        {/* Complaint Modal */}
+        <Modal show={showComplaintModal} onHide={() => setShowComplaintModal(false)} backdrop="static">
+          <Modal.Header closeButton className="bg-light">
+            <Modal.Title>
+              <i className="fas fa-comment-dots me-2 text-warning"></i>
+              Подать жалобу
+            </Modal.Title>
+          </Modal.Header>
+          <Modal.Body>
+            {complaintForm.address_ids.length > 0 ? (
+              <Form>
+                <Form.Group className="mb-3">
+                  <Form.Label>Тема жалобы <span className="text-danger">*</span></Form.Label>
+                  <Form.Control 
+                    type="text" 
+                    name="title"
+                    value={complaintForm.title}
+                    onChange={handleComplaintInputChange}
+                    placeholder="Введите тему жалобы"
+                    required
+                  />
+                </Form.Group>
+
+                <Form.Group className="mb-3">
+                  <Form.Label>Описание проблемы <span className="text-danger">*</span></Form.Label>
+                  <Form.Control 
+                    as="textarea" 
+                    rows={4}
+                    name="description"
+                    value={complaintForm.description}
+                    onChange={handleComplaintInputChange}
+                    placeholder="Опишите проблему подробнее"
+                    required
+                  />
+                </Form.Group>
+
+                <Row>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Тип инцидента <span className="text-danger">*</span></Form.Label>
+                      <Form.Select
+                        name="incident_type_id"
+                        value={complaintForm.incident_type_id || ''}
+                        onChange={handleComplaintSelectChange}
+                        required
+                      >
+                        <option value="">Выберите тип</option>
+                        {Array.isArray(incidentTypes) && incidentTypes.map(type => (
+                          <option key={type.id} value={type.id}>
+                            {type.name}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                  <Col md={6}>
+                    <Form.Group className="mb-3">
+                      <Form.Label>Тип ресурса <span className="text-danger">*</span></Form.Label>
+                      <Form.Select
+                        name="incident_resource_type_id"
+                        value={complaintForm.incident_resource_type_id || ''}
+                        onChange={handleComplaintSelectChange}
+                        required
+                      >
+                        <option value="">Выберите ресурс</option>
+                        {Array.isArray(resourceTypes) && resourceTypes.map(type => (
+                          <option key={type.id} value={type.id}>
+                            {type.name}
+                          </option>
+                        ))}
+                      </Form.Select>
+                    </Form.Group>
+                  </Col>
+                </Row>
+
+                <div className="alert alert-info">
+                  <i className="fas fa-info-circle me-2"></i>
+                  Жалоба будет отправлена в соответствующие службы для рассмотрения. Вы сможете отслеживать статус вашей жалобы в системе.
+                </div>
+              </Form>
+            ) : (
+              <div className="alert alert-danger">
+                <i className="fas fa-exclamation-triangle me-2"></i>
+                Ошибка: Не удалось определить адрес для жалобы
+              </div>
+            )}
+          </Modal.Body>
+          <Modal.Footer>
+            <Button variant="secondary" onClick={() => setShowComplaintModal(false)}>
+              Отмена
+            </Button>
+            <Button 
+              variant="primary" 
+              onClick={submitComplaint}
+              disabled={submittingComplaint || !complaintForm.title || !complaintForm.description || !complaintForm.incident_type_id || !complaintForm.incident_resource_type_id}
+            >
+              {submittingComplaint ? (
+                <>
+                  <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                  Отправка...
+                </>
+              ) : (
+                <>Отправить жалобу</>
+              )}
             </Button>
           </Modal.Footer>
         </Modal>

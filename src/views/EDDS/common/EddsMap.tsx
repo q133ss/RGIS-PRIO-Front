@@ -12,6 +12,11 @@ interface ClusteredIncident extends EddsIncident {
   isSelected?: boolean;
 }
 
+interface FocusedIncidentWithAddress {
+  incident: EddsIncident;
+  address: any; // Use the correct Address type from your API
+}
+
 interface EddsMapProps {
   data: EddsResponse | null;
   loading: boolean;
@@ -34,7 +39,9 @@ interface EddsMapProps {
   onResetFilters: () => void;
   onRefresh: () => void;
   onViewDetails: (incident: EddsIncident) => void;
-  focusedIncident?: EddsIncident | null; // New prop for focused incident
+  onViewDetailsWithAddress?: (incident: EddsIncident, address: any) => void;
+  focusedIncident?: EddsIncident | null;
+  focusedIncidentWithAddress?: FocusedIncidentWithAddress | null;
 }
 
 const EddsMap: React.FC<EddsMapProps> = ({
@@ -49,7 +56,9 @@ const EddsMap: React.FC<EddsMapProps> = ({
   onResetFilters,
   onRefresh,
   onViewDetails,
-  focusedIncident
+  onViewDetailsWithAddress,
+  focusedIncident,
+  focusedIncidentWithAddress
 }) => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
@@ -186,10 +195,14 @@ const EddsMap: React.FC<EddsMapProps> = ({
     }
   };
 
-  const focusOnIncident = (incident: EddsIncident) => {
+  // Modified to accept a specific address
+  const focusOnIncident = (incident: EddsIncident, specificAddress?: any) => {
     if (!mapInstanceRef.current || !incident.addresses || incident.addresses.length === 0) return;
     
-    const addressWithCoords = incident.addresses.find(addr => addr.latitude && addr.longitude);
+    // If a specific address is provided, use it; otherwise find the first valid one
+    const addressWithCoords = specificAddress || 
+      incident.addresses.find(addr => addr.latitude && addr.longitude);
+    
     if (!addressWithCoords) return;
     
     try {
@@ -267,7 +280,7 @@ const EddsMap: React.FC<EddsMapProps> = ({
         }, 500);
         
         // Show notification
-        setNotificationMessage(`Показан инцидент #${incident.id}: ${incident.title}`);
+        setNotificationMessage(`Показан инцидент #${incident.id}: ${incident.title} по адресу: ${getFormattedAddress(addressWithCoords)}`);
         setShowNotification(true);
       }
     } catch (e) {
@@ -400,7 +413,7 @@ const EddsMap: React.FC<EddsMapProps> = ({
                     <div style="margin-bottom: 5px;"><b>Ресурс:</b> ${incident.resource_type?.name || 'Не указан'}</div>
                     <div style="margin-bottom: 5px;"><b>Адрес:</b> ${getFormattedAddress(address)}</div>
                     <div style="margin-bottom: 8px;"><b>Создан:</b> ${formatDate(incident.created_at)}</div>
-                    <button onclick="document.dispatchEvent(new CustomEvent('viewIncidentDetails', {detail: ${incident.id}}))" 
+                    <button onclick="document.dispatchEvent(new CustomEvent('viewIncidentDetails', {detail: '${incident.id}|${coordKey}'}))" 
                             style="background-color: #0d6efd; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; width: 100%;">
                       Подробнее
                     </button>
@@ -411,7 +424,7 @@ const EddsMap: React.FC<EddsMapProps> = ({
                 coords,
                 {
                   hintContent: content,
-                  //balloonContent: balloonContent,
+                  balloonContent: balloonContent,
                   incidentId: incident.id,
                   coordKey: coordKey,
                   itemCount: incidentsAtLocation.length
@@ -423,21 +436,47 @@ const EddsMap: React.FC<EddsMapProps> = ({
                 }
               );
 
-              // placemark.events.add('click', (e: any) => {
-              //   const target = e.get('target');
-              //   const key = target.properties.get('coordKey');
-              //   const items = newLocationMap[key];
-              //
-              //   if (items && items.length === 1) {
-              //     onViewDetails(items[0]);
-              //   } else if (items && items.length > 1) {
-              //     setClusterIncidents(
-              //       items.map((inc) => ({ ...inc, isSelected: false }))
-              //     );
-              //     setShowClusterModal(true);
-              //   }
-              //   e.stopPropagation();
-              // });
+              // Add the click event handler with specific address support
+              placemark.events.add('click', (e: any) => {
+                const target = e.get('target');
+                const key = target.properties.get('coordKey');
+                const items = newLocationMap[key];
+                
+                if (items && items.length === 1) {
+                  // Get the specific address for these coordinates
+                  const clickedAddress = items[0].addresses.find(addr => {
+                    if (!addr.latitude || !addr.longitude) return false;
+                    const lat = parseFloat(String(addr.latitude));
+                    const lng = parseFloat(String(addr.longitude));
+                    const addrKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+                    return addrKey === key;
+                  });
+                  
+                  if (clickedAddress) {
+                    // Focus on the exact clicked coordinates
+                    focusOnIncident(items[0], clickedAddress);
+                    
+                    // Use the address-aware handler if available
+                    if (onViewDetailsWithAddress) {
+                      onViewDetailsWithAddress(items[0], clickedAddress);
+                    } else {
+                      // Fallback to regular handler
+                      onViewDetails(items[0]);
+                    }
+                  } else {
+                    // Fallback if address not found
+                    focusOnIncident(items[0]);
+                    onViewDetails(items[0]);
+                  }
+                } else if (items && items.length > 1) {
+                  // For multiple incidents at the same location, show cluster modal
+                  setClusterIncidents(
+                    items.map((inc) => ({ ...inc, isSelected: false }))
+                  );
+                  setShowClusterModal(true);
+                }
+                e.stopPropagation();
+              });
 
               // Store reference to this placemark
               markersRef.current[coordKey] = placemark;
@@ -465,9 +504,29 @@ const EddsMap: React.FC<EddsMapProps> = ({
       });
 
       document.addEventListener('viewIncidentDetails', (e: any) => {
-        const incidentId = parseInt(e.detail, 10);
+        const parts = e.detail.split('|');
+        const incidentId = parseInt(parts[0], 10);
+        const coordKey = parts.length > 1 ? parts[1] : null;
+        
         const incident = incidents.find(inc => inc.id === incidentId);
-        if (incident) {
+        if (!incident) return;
+        
+        if (coordKey) {
+          // Find the specific address that matches these coordinates
+          const clickedAddress = incident.addresses.find(addr => {
+            if (!addr.latitude || !addr.longitude) return false;
+            const lat = parseFloat(String(addr.latitude));
+            const lng = parseFloat(String(addr.longitude));
+            const addrKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+            return addrKey === coordKey;
+          });
+          
+          if (clickedAddress && onViewDetailsWithAddress) {
+            onViewDetailsWithAddress(incident, clickedAddress);
+          } else {
+            onViewDetails(incident);
+          }
+        } else {
           onViewDetails(incident);
         }
       });
@@ -525,9 +584,19 @@ const EddsMap: React.FC<EddsMapProps> = ({
           myMap.setCenter(placemarks[0].geometry.getCoordinates(), 15, { duration: 500 });
         }
         
-        // If we have a focused incident and this is the first load, focus on it
-        if (focusedIncident && (isFirstLoad.current || !data)) {
+        // If we have a focused incident with specific address and this is the first load, focus on it
+        if (focusedIncidentWithAddress && (isFirstLoad.current || !data)) {
           // Short delay to ensure the map is ready
+          setTimeout(() => {
+            focusOnIncident(
+              focusedIncidentWithAddress.incident,
+              focusedIncidentWithAddress.address
+            );
+          }, 500);
+          isFirstLoad.current = false;
+        }
+        // Legacy support for old focusedIncident prop
+        else if (focusedIncident && (isFirstLoad.current || !data)) {
           setTimeout(() => {
             focusOnIncident(focusedIncident);
           }, 500);
@@ -549,10 +618,15 @@ const EddsMap: React.FC<EddsMapProps> = ({
 
   // Effect for focusing on an incident when it changes
   useEffect(() => {
-    if (focusedIncident && mapInstanceRef.current) {
+    if (focusedIncidentWithAddress && mapInstanceRef.current) {
+      focusOnIncident(
+        focusedIncidentWithAddress.incident,
+        focusedIncidentWithAddress.address
+      );
+    } else if (focusedIncident && mapInstanceRef.current) {
       focusOnIncident(focusedIncident);
     }
-  }, [focusedIncident]);
+  }, [focusedIncidentWithAddress, focusedIncident]);
 
   useEffect(() => {
     const loadYandexMapsApi = (): void => {

@@ -1406,28 +1406,24 @@ export const formatAddressesForSubmission = (addressIds: number[]): number[] => 
 };
 
 //  олучения адресов по ID улицы
-export const getAddressesByStreet = async (streetId: number): Promise<Address[]> => {
+export const getAddressesByStreet = async (streetId: number, cityId: number): Promise<Address[]> => {
   try {
-    console.log(`Запрос адресов для улицы с ID ${streetId}`);
+    // Запрашиваем все адреса этого города
+    const response = await fetchAPI(`/addresses/${cityId}`);
     
-    // Make sure we're using the correct endpoint format
-    // According to your documentation, it should be /street/{streetId}/addresses
-    const response = await fetchAPI(`/street/${streetId}/addresses`);
-    console.log(`Получен ответ для адресов по улице ${streetId}:`, response);
-    
-    // Process the response properly
-    if (Array.isArray(response)) {
-      return response;
-    } else if (response && response.data && Array.isArray(response.data)) {
-      return response.data;
+    // Обрабатываем ответ
+    let addresses = [];
+    if (response && response.data && Array.isArray(response.data)) {
+      addresses = response.data;
+    } else if (Array.isArray(response)) {
+      addresses = response;
     }
     
-    // Return empty array if no addresses found
-    console.warn(`Не найдено адресов для улицы с ID ${streetId}`);
-    return [];
+    // Фильтруем только адреса для указанной улицы
+    return addresses.filter(addr => addr.street_id === streetId);
   } catch (error) {
     console.error(`Ошибка при получении адресов для улицы с ID ${streetId}:`, error);
-    return []; // Return empty array on error to avoid breaking the UI
+    return [];
   }
 };
 
@@ -2502,3 +2498,34 @@ export const downloadExport = async (exportId: string): Promise<Blob> => {
   }
 };
 
+
+// Создание нового инцидента ЕДДС
+export const createEddsIncident = async (data: Partial<EddsIncident>): Promise<EddsIncident> => {
+  try {
+    return await api.post<EddsIncident>('/edds/incident', data);
+  } catch (error) {
+    console.error('Ошибка создания инцидента ЕДДС:', error);
+    throw error;
+  }
+};
+
+// Обновление инцидента ЕДДС
+export const updateEddsIncident = async (id: number, data: Partial<EddsIncident>): Promise<EddsIncident> => {
+  try {
+    return await api.patch<EddsIncident>(`/edds/incident/${id}`, data);
+  } catch (error) {
+    console.error(`Ошибка обновления инцидента ЕДДС с ID ${id}:`, error);
+    throw error;
+  }
+};
+
+// Удаление инцидента ЕДДС
+export const deleteEddsIncident = async (id: number): Promise<boolean> => {
+  try {
+    const response = await api.delete<{message: boolean}>(`/edds/incident/${id}`);
+    return response.message === true;
+  } catch (error) {
+    console.error(`Ошибка удаления инцидента ЕДДС с ID ${id}:`, error);
+    throw error;
+  }
+};
