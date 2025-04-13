@@ -372,8 +372,6 @@ export const exportHeatSourcesToExcel = async (): Promise<Blob> => {
   }
 };
 
-// Функции адаптеров для преобразования данных
-// Add these changes to the adaptHeatSourceFromApi function in api.ts
 function adaptHeatSourceFromApi(apiSource: ApiHeatSource): HeatSource {
   console.log('Данные для адаптации:', apiSource);
   
@@ -388,6 +386,20 @@ function adaptHeatSourceFromApi(apiSource: ApiHeatSource): HeatSource {
         ? apiSource.org.shortName 
         : (typeof apiSource.org === 'string' ? apiSource.org : ''))
     : '';
+  
+  // Преобразование supply_address_ids из строки JSON в массив, если необходимо
+  let supplyAddressIds: number[] = [];
+  if (apiSource.supply_address_ids) {
+    if (typeof apiSource.supply_address_ids === 'string') {
+      try {
+        supplyAddressIds = JSON.parse(apiSource.supply_address_ids);
+      } catch (e) {
+        console.error('Ошибка при разборе supply_address_ids:', e);
+      }
+    } else if (Array.isArray(apiSource.supply_address_ids)) {
+      supplyAddressIds = apiSource.supply_address_ids;
+    }
+  }
   
   return {
     id: apiSource.id || 0,
@@ -411,8 +423,35 @@ function adaptHeatSourceFromApi(apiSource: ApiHeatSource): HeatSource {
                'Не указано',
     data_transmission_start_date: apiSource.data_transmission_start_date || 'Не указано',
     consumers: apiSource.consumers || 'Не указано',
+    passport: apiSource.passport || undefined, // Добавляем паспорт
+    supply_address_ids: supplyAddressIds // Добавляем список обслуживаемых адресов
   };
 }
+
+// При необходимости можно добавить специальные функции для работы с паспортами
+
+// Получение паспорта теплоисточника (если требуется отдельный запрос)
+export const getHeatSourcePassport = async (id: number): Promise<Passport> => {
+  try {
+    return await fetchAPI(`/hs/${id}/passport`);
+  } catch (error) {
+    console.error(`Ошибка получения паспорта теплоисточника с ID ${id}:`, error);
+    throw error;
+  }
+};
+
+// Обновление паспорта теплоисточника (если требуется отдельный запрос)
+export const updateHeatSourcePassport = async (hsId: number, passportData: Partial<Passport>): Promise<Passport> => {
+  try {
+    return await fetchAPI(`/hs/${hsId}/passport`, {
+      method: 'PATCH',
+      body: JSON.stringify(passportData)
+    });
+  } catch (error) {
+    console.error(`Ошибка обновления паспорта теплоисточника с ID ${hsId}:`, error);
+    throw error;
+  }
+};
 
 function adaptHeatSourcesFromApi(apiSources: ApiHeatSource[]): HeatSource[] {
   return apiSources.map(adaptHeatSourceFromApi);
@@ -1367,28 +1406,24 @@ export const formatAddressesForSubmission = (addressIds: number[]): number[] => 
 };
 
 //  олучения адресов по ID улицы
-export const getAddressesByStreet = async (streetId: number): Promise<Address[]> => {
+export const getAddressesByStreet = async (streetId: number, cityId: number): Promise<Address[]> => {
   try {
-    console.log(`Запрос адресов для улицы с ID ${streetId}`);
+    // Запрашиваем все адреса этого города
+    const response = await fetchAPI(`/addresses/${cityId}`);
     
-    // Make sure we're using the correct endpoint format
-    // According to your documentation, it should be /street/{streetId}/addresses
-    const response = await fetchAPI(`/street/${streetId}/addresses`);
-    console.log(`Получен ответ для адресов по улице ${streetId}:`, response);
-    
-    // Process the response properly
-    if (Array.isArray(response)) {
-      return response;
-    } else if (response && response.data && Array.isArray(response.data)) {
-      return response.data;
+    // Обрабатываем ответ
+    let addresses = [];
+    if (response && response.data && Array.isArray(response.data)) {
+      addresses = response.data;
+    } else if (Array.isArray(response)) {
+      addresses = response;
     }
     
-    // Return empty array if no addresses found
-    console.warn(`Не найдено адресов для улицы с ID ${streetId}`);
-    return [];
+    // Фильтруем только адреса для указанной улицы
+    return addresses.filter(addr => addr.street_id === streetId);
   } catch (error) {
     console.error(`Ошибка при получении адресов для улицы с ID ${streetId}:`, error);
-    return []; // Return empty array on error to avoid breaking the UI
+    return [];
   }
 };
 
@@ -1728,18 +1763,19 @@ export const uploadLoginBackground = async (file: File): Promise<boolean> => {
 // Получение URL фона страницы входа (публичный эндпоинт)
 export const getLoginBackgroundUrl = async (): Promise<string | null> => {
   try {
-    // Пытаемся получить настройки без авторизации
-    const response = await fetch(`${API_URL}/settings/settings`);
+    // Используем отдельный эндпоинт для получения фона логина
+    const response = await fetch(`${API_URL}/login-background`);
     
     if (!response.ok) {
+      console.log("Ответ от API не ок:", response.status);
       return null;
     }
     
-    const settings = await response.json();
-    const loginImgSetting = Array.isArray(settings) ? 
-      settings.find(s => s.key === 'login_img') : null;
+    const data = await response.json();
+    console.log("Полученные данные фона:", data);
     
-    return loginImgSetting?.value || null;
+    // Возвращаем src из ответа API
+    return data.src || null;
   } catch (error) {
     console.error('Ошибка получения URL фона страницы входа:', error);
     return null;
@@ -2370,3 +2406,128 @@ export const getFreeCapacityEquipment = async (): Promise<FreeCapacityEquipment[
     return [];
   }
 };
+
+// Add these functions to your api.ts file
+
+/**
+ * Initiates an export request for data
+ * @param format The endpoint path for export (e.g., 'hs/xlsx', 'mkd/csv')
+ * @returns Promise with export ID and message
+ */
+export const requestExport = async (format: string): Promise<{ export_id: string, message: string }> => {
+  try {
+    console.log(`Requesting ${format} export...`);
+    const response = await fetchAPI(`/exports/${format}`, {
+      method: 'POST'
+    });
+    
+    console.log('Export request response:', response);
+    
+    if (!response || !response.export_id) {
+      throw new Error('Invalid response from export request');
+    }
+    
+    return {
+      export_id: response.export_id,
+      message: response.message || 'Запрос на экспорт создан'
+    };
+  } catch (error) {
+    console.error(`Error requesting ${format} export:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Checks the status of an export request
+ * @param exportId The ID of the export job
+ * @returns Promise with status information
+ */
+export const checkExportStatus = async (exportId: string): Promise<{ status: string, download_url?: string }> => {
+  try {
+    console.log(`Checking status for export ID: ${exportId}`);
+    const response = await fetchAPI(`/exports/${exportId}/status`);
+    
+    console.log('Export status response:', response);
+    
+    if (!response || !response.status) {
+      throw new Error('Invalid status response');
+    }
+    
+    return {
+      status: response.status,
+      download_url: response.download_url
+    };
+  } catch (error) {
+    console.error(`Error checking export status for ID ${exportId}:`, error);
+    throw error;
+  }
+};
+
+/**
+ * Downloads an export file by ID
+ * @param exportId The ID of the export job
+ * @returns Promise with file blob
+ */
+export const downloadExport = async (exportId: string): Promise<Blob> => {
+  try {
+    console.log(`Downloading export ID: ${exportId}`);
+    
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) {
+      throw new Error('Отсутствует токен авторизации');
+    }
+    
+    const response = await fetch(`${API_URL}/exports/${exportId}/download`, {
+      headers: {
+        'Authorization': `Bearer ${token}`
+      }
+    });
+    
+    if (!response.ok) {
+      console.error(`Download failed with status: ${response.status}`);
+      throw new Error(`Ошибка скачивания: ${response.status}`);
+    }
+    
+    // Get content type to determine format
+    const contentType = response.headers.get('Content-Type');
+    console.log(`Download completed. Content-Type: ${contentType}`);
+    
+    return await response.blob();
+  } catch (error) {
+    console.error(`Error downloading export ID ${exportId}:`, error);
+    throw error;
+  }
+};
+
+
+// Создание нового инцидента ЕДДС
+export const createEddsIncident = async (data: Partial<EddsIncident>): Promise<EddsIncident> => {
+  try {
+    return await api.post<EddsIncident>('/edds/incident', data);
+  } catch (error) {
+    console.error('Ошибка создания инцидента ЕДДС:', error);
+    throw error;
+  }
+};
+
+// Обновление инцидента ЕДДС
+export const updateEddsIncident = async (id: number, data: Partial<EddsIncident>): Promise<EddsIncident> => {
+  try {
+    return await api.patch<EddsIncident>(`/edds/incident/${id}`, data);
+  } catch (error) {
+    console.error(`Ошибка обновления инцидента ЕДДС с ID ${id}:`, error);
+    throw error;
+  }
+};
+
+// Удаление инцидента ЕДДС
+export const deleteEddsIncident = async (id: number): Promise<boolean> => {
+  try {
+    const response = await api.delete<{message: boolean}>(`/edds/incident/${id}`);
+    return response.message === true;
+  } catch (error) {
+    console.error(`Ошибка удаления инцидента ЕДДС с ID ${id}:`, error);
+    throw error;
+  }
+};
+

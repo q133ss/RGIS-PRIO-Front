@@ -4,7 +4,6 @@ import { Link } from 'react-router-dom';
 import {
     getHeatSources,
     searchHeatSources,
-    exportHeatSourcesToExcel,
     importHeatSourcesFromExcel,
     initializeApi,
     createHeatSource,
@@ -14,12 +13,19 @@ import {
     getHeatSourceTypes,
     getOrganizations,
     getHeatSourcePeriods,
-    getOKS
+    getOKS,
+    requestExport,
+    checkExportStatus,
+    downloadExport,
+    getAddressesByStreet,
+    searchAddresses
 } from '../../../services/api';
 import { HeatSource, HeatSourceState, ApiHeatSource } from '../../../types/heatSource';
 import DeleteModal from "../../../Common/DeleteModal";
 
 const MAX_API_RETRY_ATTEMPTS = 3;
+const EXPORT_STATUS_CHECK_INTERVAL = 2000; // 2 seconds
+const MAX_EXPORT_STATUS_CHECKS = 30; // 60 seconds total
 
 interface TableColumn {
     id: string;
@@ -36,6 +42,19 @@ interface HeatSourceApiResponse {
     totalItems: number;
 }
 
+interface AddressDetail {
+    id: number;
+    name: string;
+    street?: {
+        name: string;
+        city?: {
+            name: string;
+        }
+    };
+    house_number?: string;
+    building?: string | null;
+}
+
 const HeatSources: React.FC = () => {
     const [state, setState] = useState<HeatSourceState>({
         heatSources: [],
@@ -47,6 +66,12 @@ const HeatSources: React.FC = () => {
         totalPages: 1,
         totalItems: 0,
         success: ''
+    });
+
+    const [exportState, setExportState] = useState({
+        loading: false,
+        progress: '',
+        error: null
     });
 
     const [activeFilters, setActiveFilters] = useState({
@@ -87,6 +112,7 @@ const HeatSources: React.FC = () => {
     const [showDeleteModal, setShowDeleteModal] = useState(false);
     const [showEditOffcanvas, setShowEditOffcanvas] = useState(false);
     const [showColumnsSettings, setShowColumnsSettings] = useState(false);
+    const [showPassportModal, setShowPassportModal] = useState(false);
     const [currentItem, setCurrentItem] = useState<HeatSource | null>(null);
     const [formLoading, setFormLoading] = useState(false);
     const [formError, setFormError] = useState<string | null>(null);
@@ -120,6 +146,14 @@ const HeatSources: React.FC = () => {
     const [oksList, setOksList] = useState<any[]>([]);
     const [isResizing, setIsResizing] = useState(false);
     const tableRef = useRef<HTMLTableElement>(null);
+    const offcanvasBodyRef = useRef<HTMLDivElement>(null);
+    
+    // New state for addresses
+    const [addressSearch, setAddressSearch] = useState('');
+    const [addressSearchResults, setAddressSearchResults] = useState<AddressDetail[]>([]);
+    const [addressSearchLoading, setAddressSearchLoading] = useState(false);
+    const [selectedAddresses, setSelectedAddresses] = useState<AddressDetail[]>([]);
+    const [addressMappings, setAddressMappings] = useState<{[key: number]: AddressDetail}>({});
 
     useEffect(() => {
         const savedColumns = localStorage.getItem('heatSourcesColumns');
@@ -135,10 +169,102 @@ const HeatSources: React.FC = () => {
     }, []);
 
     useEffect(() => {
+        if (showEditOffcanvas) {
+            // Добавляем небольшую задержку, чтобы DOM успел обновиться
+            const timer = setTimeout(() => {
+                if (offcanvasBodyRef.current) {
+                    offcanvasBodyRef.current.style.overflowY = 'auto';
+                    offcanvasBodyRef.current.style.maxHeight = 'calc(100vh - 120px)';
+                    
+                    // Принудительное обновление стилей
+                    document.body.style.overflow = 'hidden';
+                    setTimeout(() => {
+                        document.body.style.overflow = '';
+                    }, 10);
+                }
+            }, 100);
+            
+            return () => clearTimeout(timer);
+        }
+    }, [showEditOffcanvas]);
+
+    useEffect(() => {
         if (isTableCustomized) {
             localStorage.setItem('heatSourcesColumns', JSON.stringify(columns));
         }
     }, [columns, isTableCustomized]);
+
+    // Load address details for each heat source
+    useEffect(() => {
+        if (state.heatSources.length > 0) {
+            // Collect all address IDs from all heat sources
+            const allAddressIds: number[] = [];
+            state.heatSources.forEach(source => {
+                if (source.supply_address_ids && Array.isArray(source.supply_address_ids)) {
+                    source.supply_address_ids.forEach(id => {
+                        if (!addressMappings[id]) {
+                            allAddressIds.push(id);
+                        }
+                    });
+                }
+            });
+
+            // Fetch details for addresses we don't already have
+            if (allAddressIds.length > 0) {
+                loadAddressDetails(allAddressIds);
+            }
+        }
+    }, [state.heatSources]);
+
+    // Load address details for selected addresses in form
+    useEffect(() => {
+        if (currentItem && currentItem.supply_address_ids && Array.isArray(currentItem.supply_address_ids)) {
+            const missingAddressIds = currentItem.supply_address_ids.filter(id => !addressMappings[id]);
+            if (missingAddressIds.length > 0) {
+                loadAddressDetails(missingAddressIds);
+            }
+
+            // Update selected addresses state
+            const newSelectedAddresses = currentItem.supply_address_ids
+                .map(id => addressMappings[id])
+                .filter(address => address !== undefined);
+                
+            setSelectedAddresses(newSelectedAddresses as AddressDetail[]);
+        }
+    }, [currentItem, addressMappings]);
+
+    // Function to load address details by ID
+    const loadAddressDetails = async (addressIds: number[]) => {
+        try {
+            // This is a simplification - you might need to implement an API endpoint to get multiple addresses by IDs
+            // For now, we'll update the addressMappings for the IDs we have
+            const newMappings = {...addressMappings};
+            let updated = false;
+            
+            for (const id of addressIds) {
+                // Skip already loaded addresses
+                if (newMappings[id]) continue;
+                
+                try {
+                    // You might need to create a real API endpoint for this
+                    // For now, create a placeholder address object
+                    newMappings[id] = {
+                        id,
+                        name: `Адрес ${id}`,
+                    };
+                    updated = true;
+                } catch (error) {
+                    console.error(`Ошибка при загрузке адреса ${id}:`, error);
+                }
+            }
+            
+            if (updated) {
+                setAddressMappings(newMappings);
+            }
+        } catch (error) {
+            console.error('Ошибка при загрузке адресов:', error);
+        }
+    };
 
     const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
         e.preventDefault();
@@ -565,42 +691,108 @@ const HeatSources: React.FC = () => {
         }
     };
 
-    const handleExportToExcel = async () => {
+    const handleExport = async (format: 'csv' | 'xlsx') => {
         try {
-            setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
-
-            const now = new Date();
-            const dateStr = `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
-            const timeStr = `${now.getHours()}-${now.getMinutes()}`;
-
-            const blob = await exportHeatSourcesToExcel();
-
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Теплоисточники_${dateStr}_${timeStr}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            setState(prev => ({
-                ...prev,
-                loading: false,
-                success: 'Данные успешно экспортированы',
+            setExportState({
+                loading: true,
+                progress: 'Инициализация экспорта...',
                 error: null
-            }));
+            });
+
+            // Step 1: Request export
+            const exportResult = await requestExport(format === 'csv' ? 'hs/csv' : 'hs/xlsx');
+            
+            if (!exportResult || !exportResult.export_id) {
+                throw new Error('Не удалось получить ID экспорта');
+            }
+            
+            const exportId = exportResult.export_id;
+            
+            // Step 2: Poll for status
+            let statusCheckCount = 0;
+            let completed = false;
+            
+            const checkExportStatusInterval = setInterval(async () => {
+                try {
+                    statusCheckCount++;
+                    
+                    setExportState(prev => ({
+                        ...prev,
+                        progress: `Подготовка файла (${statusCheckCount}/${MAX_EXPORT_STATUS_CHECKS})...`
+                    }));
+                    
+                    const statusResult = await checkExportStatus(exportId);
+                    
+                    if (statusResult.status === 'completed') {
+                        clearInterval(checkExportStatusInterval);
+                        completed = true;
+                        
+                        setExportState(prev => ({
+                            ...prev,
+                            progress: 'Скачивание файла...'
+                        }));
+                        
+                        // Step 3: Download the file
+                        const blob = await downloadExport(exportId);
+                        
+                        // Create filename with date/time
+                        const now = new Date();
+                        const dateStr = `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
+                        const timeStr = `${now.getHours()}-${now.getMinutes()}`;
+                        const fileExt = format === 'csv' ? 'csv' : 'xlsx';
+                        const filename = `Теплоисточники_${dateStr}_${timeStr}.${fileExt}`;
+                        
+                        // Create download link
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = filename;
+                        document.body.appendChild(a);
+                        a.click();
+                        
+                        // Cleanup
+                        URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        setExportState({
+                            loading: false,
+                            progress: '',
+                            error: null
+                        });
+
+                        setState(prev => ({
+                            ...prev,
+                            success: 'Данные успешно экспортированы'
+                        }));
+                    }
+                } catch (error) {
+                    clearInterval(checkExportStatusInterval);
+                    console.error('Error checking export status:', error);
+                    setExportState({
+                        loading: false,
+                        progress: '',
+                        error: `Ошибка при проверке статуса экспорта: ${error}`
+                    });
+                }
+                
+                // Stop polling after max attempts
+                if (statusCheckCount >= MAX_EXPORT_STATUS_CHECKS && !completed) {
+                    clearInterval(checkExportStatusInterval);
+                    setExportState({
+                        loading: false,
+                        progress: '',
+                        error: `Превышено время ожидания экспорта. Попробуйте позже или обратитесь к администратору.`
+                    });
+                }
+            }, EXPORT_STATUS_CHECK_INTERVAL);
+            
         } catch (error) {
-            console.error('Ошибка экспорта:', error);
-
-            setApiRetryCount(prev => prev + 1);
-
-            setState(prev => ({
-                ...prev,
-                error: `Не удалось экспортировать данные. Пожалуйста, попробуйте позже.`,
+            console.error('Export error:', error);
+            setExportState({
                 loading: false,
-                success: ''
-            }));
+                progress: '',
+                error: `Ошибка экспорта: ${error}`
+            });
         }
     };
 
@@ -693,7 +885,7 @@ const HeatSources: React.FC = () => {
                 hs_period_id: getPeriodIdByName(details.operationPeriod),
                 oks_id: getOksIdByName('Жилой дом'),
                 address_id: 1,
-                supply_address_ids: [],
+                supply_address_ids: details.supply_address_ids || [],
                 installed_capacity_gcal_hour: details.installed_capacity_gcal_hour,
                 available_capacity_gcal_hour: details.available_capacity_gcal_hour,
                 data_transmission_start_date: details.data_transmission_start_date,
@@ -709,6 +901,11 @@ const HeatSources: React.FC = () => {
             setFormLoading(false);
             setFormError('Не удалось загрузить данные для редактирования');
         }
+    };
+
+    const handleViewPassport = (item: HeatSource) => {
+        setCurrentItem(item);
+        setShowPassportModal(true);
     };
 
     const getTypeIdByName = (name: string): number => {
@@ -740,6 +937,7 @@ const HeatSources: React.FC = () => {
         setFormError(null);
         setCurrentItem(null);
         setFormLoading(true);
+        setSelectedAddresses([]);
 
         let referencesLoaded = true;
         if (types.length === 0 || organizations.length === 0 || periods.length === 0 || oksList.length === 0) {
@@ -773,6 +971,64 @@ const HeatSources: React.FC = () => {
 
         setFormLoading(false);
         setShowEditOffcanvas(true);
+    };
+
+    // Address search functionality
+    const handleAddressSearch = async () => {
+        if (!addressSearch.trim()) return;
+        
+        try {
+            setAddressSearchLoading(true);
+            // You'll need to implement this API endpoint or adapt an existing one
+            const results = await searchAddresses(2, addressSearch); // 2 is hardcoded as a cityId (e.g., Voronezh)
+            setAddressSearchResults(results);
+            setAddressSearchLoading(false);
+        } catch (error) {
+            console.error('Ошибка поиска адресов:', error);
+            setAddressSearchLoading(false);
+        }
+    };
+
+    const handleAddAddress = (address: AddressDetail) => {
+        // Check if address already selected
+        if (selectedAddresses.some(a => a.id === address.id)) return;
+        
+        // Add to selected addresses
+        setSelectedAddresses(prev => [...prev, address]);
+        
+        // Update form data
+        setFormData(prev => ({
+            ...prev,
+            supply_address_ids: [...(prev.supply_address_ids || []), address.id]
+        }));
+        
+        // Update address mappings
+        setAddressMappings(prev => ({
+            ...prev,
+            [address.id]: address
+        }));
+        
+        // Clear search
+        setAddressSearch('');
+        setAddressSearchResults([]);
+    };
+
+    const handleRemoveAddress = (addressId: number) => {
+        // Remove from selected addresses
+        setSelectedAddresses(prev => prev.filter(a => a.id !== addressId));
+        
+        // Update form data
+        setFormData(prev => ({
+            ...prev,
+            supply_address_ids: (prev.supply_address_ids || []).filter(id => id !== addressId)
+        }));
+    };
+
+    const getAddressDisplayName = (address: AddressDetail): string => {
+        if (address.street?.city?.name && address.street?.name && address.house_number) {
+            return `${address.street.city.name}, ${address.street.name}, ${address.house_number}${address.building ? ` корп. ${address.building}` : ''}`;
+        }
+        return address.name || `Адрес ${address.id}`;
     };
 
     const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
@@ -967,6 +1223,15 @@ const HeatSources: React.FC = () => {
         };
     }, []);
 
+    // Add this effect to fix scrolling issue
+    useEffect(() => {
+        if (showEditOffcanvas && offcanvasBodyRef.current) {
+            // Make sure the offcanvas body has proper styling for scrolling
+            offcanvasBodyRef.current.style.overflowY = 'auto';
+            offcanvasBodyRef.current.style.height = 'calc(100% - 60px)'; // Adjust height to account for header
+        }
+    }, [showEditOffcanvas]);
+
     const renderPagination = () => {
         if (state.totalPages <= 1) return null;
 
@@ -1078,6 +1343,15 @@ const HeatSources: React.FC = () => {
                             </OverlayTrigger>
                             <OverlayTrigger
                                 placement="top"
+                                overlay={<Tooltip id="tooltip-passport">Паспорт</Tooltip>}
+                            >
+                                <i
+                                    className="ph-duotone ph-file-text text-success f-18 cursor-pointer me-2"
+                                    onClick={() => handleViewPassport(source)}
+                                ></i>
+                            </OverlayTrigger>
+                            <OverlayTrigger
+                                placement="top"
                                 overlay={<Tooltip id="tooltip-delete">Удалить</Tooltip>}
                             >
                                 <i
@@ -1130,7 +1404,7 @@ const HeatSources: React.FC = () => {
                 </Form.Group>
 
                 <div className="d-flex justify-content-between align-items-center mt-2 mb-3">
-                     <a href="/Users/x/Desktop/adminpanel/src/xlstemplates/template.xlsx" download className="btn btn-link p-0 small">
+                     <a href="/assets/templates/template.xlsx" download className="btn btn-link p-0 small">
                         <i className="ph-duotone ph-file-excel me-1"></i> Скачать шаблон
                     </a>
                     <small className="text-muted">
@@ -1176,6 +1450,135 @@ const HeatSources: React.FC = () => {
             </Modal.Body>
         </Modal>
     );
+
+    const renderPassportModal = () => {
+        if (!currentItem || !currentItem.passport) {
+            return null;
+        }
+
+        // Helper to get address name from ID
+        const getAddressName = (id: number) => {
+            const address = addressMappings[id];
+            if (address) {
+                return getAddressDisplayName(address);
+            }
+            return `Адрес ${id}`;
+        };
+
+        return (
+            <Modal
+                show={showPassportModal}
+                onHide={() => setShowPassportModal(false)}
+                size="lg"
+            >
+                <Modal.Header closeButton>
+                    <Modal.Title className="f-w-600">
+                        <i className="ph-duotone ph-file-text me-2"></i>
+                        Паспорт теплоисточника
+                    </Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    <div className="passport-container">
+                        <div className="passport-header mb-4">
+                            <h5 className="text-center mb-3">ПАСПОРТ ТЕПЛОИСТОЧНИКА</h5>
+                            <div className="row">
+                                <div className="col-md-6">
+                                    <p><strong>Номер паспорта:</strong> {currentItem.passport.passport_number}</p>
+                                </div>
+                                <div className="col-md-6 text-md-end">
+                                    <p><strong>Дата выдачи:</strong> {currentItem.passport.issue_date}</p>
+                                </div>
+                            </div>
+                            <hr />
+                        </div>
+
+                        <div className="passport-section mb-4">
+                            <h6 className="section-title mb-3">1. ОБЩИЕ СВЕДЕНИЯ</h6>
+                            <div className="row g-3">
+                                <div className="col-md-6">
+                                    <p><strong>Наименование:</strong> {currentItem.sourceName}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Тип котельной:</strong> {currentItem.type}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Собственник:</strong> {currentItem.owner}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Эксплуатирующая организация:</strong> {currentItem.operator}</p>
+                                </div>
+                                <div className="col-md-12">
+                                    <p><strong>Адрес:</strong> {currentItem.address}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Период работы:</strong> {currentItem.operationPeriod}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Год ввода в эксплуатацию:</strong> {currentItem.yearBuilt}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="passport-section mb-4">
+                            <h6 className="section-title mb-3">2. ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ</h6>
+                            <div className="row g-3">
+                                <div className="col-md-6">
+                                    <p><strong>Установленная мощность, Гкал/час:</strong> {currentItem.installed_capacity_gcal_hour}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Доступная мощность, Гкал/час:</strong> {currentItem.available_capacity_gcal_hour}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Основной вид топлива:</strong> {currentItem.primary_fuel_type}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Вторичный вид топлива:</strong> {currentItem.secondary_fuel_type || "Не предусмотрен"}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Температурный график:</strong> {currentItem.temperature_schedule}</p>
+                                </div>
+                                <div className="col-md-6">
+                                    <p><strong>Дата начала передачи данных:</strong> {currentItem.data_transmission_start_date || "Не указана"}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="passport-section mb-4">
+                            <h6 className="section-title mb-3">3. ЗОНА ТЕПЛОСНАБЖЕНИЯ</h6>
+                            <div className="row g-3">
+                                <div className="col-md-12">
+                                    <p><strong>Обслуживаемые здания:</strong></p>
+                                    {currentItem.supply_address_ids && Array.isArray(currentItem.supply_address_ids) && currentItem.supply_address_ids.length > 0 ? (
+                                        <div className="address-list">
+                                            <ul>
+                                                {currentItem.supply_address_ids.map((addressId, index) => (
+                                                    <li key={index}>{getAddressName(addressId)}</li>
+                                                ))}
+                                            </ul>
+                                        </div>
+                                    ) : (
+                                        <p className="text-muted">Нет данных об обслуживаемых зданиях</p>
+                                    )}
+                                </div>
+                                <div className="col-md-12">
+                                    <p><strong>Потребители:</strong> {currentItem.consumers || "Не указаны"}</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button variant="secondary" onClick={() => setShowPassportModal(false)}>
+                        Закрыть
+                    </Button>
+                    <Button variant="primary" disabled>
+                        <i className="ph-duotone ph-printer me-1"></i>
+                        Печать
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+        );
+    };
 
     return (
         <React.Fragment>
@@ -1228,6 +1631,19 @@ const HeatSources: React.FC = () => {
                             {state.success && state.success !== 'success' && (
                                 <Alert variant="success" onClose={() => setState(prev => ({ ...prev, success: 'success' }))} dismissible>
                                     {state.success}
+                                </Alert>
+                            )}
+                            
+                            {exportState.error && (
+                                <Alert variant="danger" onClose={() => setExportState(prev => ({ ...prev, error: null }))} dismissible>
+                                    {exportState.error}
+                                </Alert>
+                            )}
+                            
+                            {exportState.loading && (
+                                <Alert variant="info" className="d-flex align-items-center">
+                                    <Spinner animation="border" size="sm" className="me-2" />
+                                    <div>{exportState.progress}</div>
                                 </Alert>
                             )}
 
@@ -1331,15 +1747,24 @@ const HeatSources: React.FC = () => {
                                             <i className="ph-duotone ph-upload-simple me-1"></i>
                                             ИМПОРТ
                                         </Button>
-                                        <Button
-                                            variant="secondary"
-                                            onClick={handleExportToExcel}
-                                            disabled={state.loading || authError}
-                                            title="Экспорт в CSV файл"
-                                        >
-                                            <i className="ph-duotone ph-file-excel me-1"></i>
-                                            ЭКСПОРТ
-                                        </Button>
+                                        <Dropdown>
+                                            <Dropdown.Toggle 
+                                                variant="secondary" 
+                                                disabled={state.loading || authError || exportState.loading}
+                                                title="Экспорт данных"
+                                            >
+                                                <i className="ph-duotone ph-file-export me-1"></i>
+                                                ЭКСПОРТ
+                                            </Dropdown.Toggle>
+                                            <Dropdown.Menu>
+                                                <Dropdown.Item onClick={() => handleExport('csv')}>
+                                                    <i className="ph-duotone ph-file-csv me-2"></i>Экспорт в CSV
+                                                </Dropdown.Item>
+                                                <Dropdown.Item onClick={() => handleExport('xlsx')}>
+                                                    <i className="ph-duotone ph-file-xls me-2"></i>Экспорт в EXCEL
+                                                </Dropdown.Item>
+                                            </Dropdown.Menu>
+                                        </Dropdown>
                                     </div>
                                 </Col>
                             </Row>
@@ -1611,6 +2036,47 @@ const HeatSources: React.FC = () => {
                                     <p className="text-muted">{currentItem?.consumers}</p>
                                 </div>
                             </div>
+
+                            {currentItem?.supply_address_ids && currentItem.supply_address_ids.length > 0 && (
+                                <div className="d-flex mt-2">
+                                    <div className="flex-shrink-0">
+                                        <div className="avtar avtar-xs bg-light-primary">
+                                            <i className="ti ti-building-skyscraper f-20"></i>
+                                        </div>
+                                    </div>
+                                    <div className="flex-grow-1 ms-3">
+                                        <h5 className="mb-1"><b>Зона теплоснабжения</b></h5>
+                                        <div className="address-list mt-2">
+                                            <ul>
+                                                {currentItem.supply_address_ids.map((addressId, index) => {
+                                                    const address = addressMappings[addressId];
+                                                    return (
+                                                        <li key={index}>
+                                                            {address ? getAddressDisplayName(address) : `Адрес ${addressId}`}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {currentItem?.passport && (
+                                <div className="mt-4">
+                                    <Button 
+                                        variant="outline-primary" 
+                                        onClick={() => {
+                                            setShowDetailsModal(false);
+                                            setShowPassportModal(true);
+                                        }}
+                                        className="w-100"
+                                    >
+                                        <i className="ph-duotone ph-file-text me-2"></i>
+                                        Открыть паспорт теплоисточника
+                                    </Button>
+                                </div>
+                            )}
                         </>
                     )}
                 </Offcanvas.Body>
@@ -1631,7 +2097,7 @@ const HeatSources: React.FC = () => {
                     </Offcanvas.Title>
                 </Offcanvas.Header>
                 <Form id="heat-source-form" onSubmit={handleSaveForm}>
-                    <Offcanvas.Body>
+                <Offcanvas.Body ref={offcanvasBodyRef} className="edit-form-container" style={{ overflowY: 'auto', maxHeight: 'calc(100vh - 120px)' }}>
                         {formLoading ? (
                             <div className="text-center py-5">
                                 <Spinner animation="border" role="status">
@@ -1825,6 +2291,73 @@ const HeatSources: React.FC = () => {
                                     </div>
                                 </Col>
 
+                                {/* Добавлен новый раздел для зоны теплоснабжения */}
+                                <Col xs={12}>
+                                    <div className="mb-3">
+                                        <Form.Label>Зона теплоснабжения (обслуживаемые здания)</Form.Label>
+                                        <InputGroup className="mb-2">
+                                            <Form.Control
+                                                type="search"
+                                                placeholder="Поиск адреса..."
+                                                value={addressSearch}
+                                                onChange={(e) => setAddressSearch(e.target.value)}
+                                                onKeyPress={(e) => e.key === 'Enter' && handleAddressSearch()}
+                                            />
+                                            <Button
+                                                variant="outline-secondary"
+                                                onClick={handleAddressSearch}
+                                                disabled={addressSearchLoading || !addressSearch.trim()}
+                                            >
+                                                {addressSearchLoading ? (
+                                                    <Spinner animation="border" size="sm" />
+                                                ) : (
+                                                    <i className="ti ti-search"></i>
+                                                )}
+                                            </Button>
+                                        </InputGroup>
+
+                                        {addressSearchResults.length > 0 && (
+                                            <div className="address-search-results mb-2">
+                                                <div className="list-group">
+                                                    {addressSearchResults.map(address => (
+                                                        <Button
+                                                            key={address.id}
+                                                            variant="light"
+                                                            className="list-group-item list-group-item-action text-start"
+                                                            onClick={() => handleAddAddress(address)}
+                                                        >
+                                                            {getAddressDisplayName(address)}
+                                                        </Button>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="selected-addresses-container">
+                                            {selectedAddresses.length > 0 ? (
+                                                <div className="address-list">
+                                                    <ul>
+                                                        {selectedAddresses.map(address => (
+                                                            <li key={address.id} className="d-flex justify-content-between align-items-center">
+                                                                <span>{getAddressDisplayName(address)}</span>
+                                                                <Button
+                                                                    variant="link"
+                                                                    className="text-danger p-0"
+                                                                    onClick={() => handleRemoveAddress(address.id)}
+                                                                >
+                                                                    <i className="ti ti-x"></i>
+                                                                </Button>
+                                                            </li>
+                                                        ))}
+                                                    </ul>
+                                                </div>
+                                            ) : (
+                                                <p className="text-muted">Нет выбранных зданий</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </Col>
+
                                 <Col xs={12}>
                                     <div className="small text-muted mb-3">* - обязательные поля</div>
                                 </Col>
@@ -1889,6 +2422,7 @@ const HeatSources: React.FC = () => {
             />
 
             {renderImportModal()}
+            {renderPassportModal()}
 
             <style>{`
                 .cursor-pointer {
@@ -2044,6 +2578,78 @@ const HeatSources: React.FC = () => {
                     display: flex;
                     align-items: center;
                     font-size: 0.9rem;
+                }
+
+                .passport-container {
+                    background-color: #fff;
+                    border-radius: 5px;
+                    padding: 20px;
+                }
+
+                .passport-header h5 {
+                    font-weight: 700;
+                    color: #162c4e;
+                }
+
+                .section-title {
+                    color: #0d6efd;
+                    font-weight: 600;
+                    border-bottom: 1px solid #dee2e6;
+                    padding-bottom: 8px;
+                }
+
+                .passport-section {
+                    margin-bottom: 30px;
+                }
+
+                .passport-section p {
+                    margin-bottom: 4px;
+                }
+
+                .passport-section .row {
+                    margin-bottom: 10px;
+                }
+
+                .address-list {
+                    max-height: 150px;
+                    overflow-y: auto;
+                    border: 1px solid #e9ecef;
+                    border-radius: 4px;
+                    padding: 10px;
+                    background-color: #f8f9fa;
+                }
+
+                .address-list ul {
+                    list-style-type: none;
+                    padding-left: 5px;
+                    margin-bottom: 0;
+                }
+
+                .address-list li {
+                    padding: 3px 5px;
+                    border-bottom: 1px solid #e9ecef;
+                }
+
+                .address-list li:last-child {
+                    border-bottom: none;
+                }
+
+                .edit-form-container {
+    overflow-y: auto !important;
+    max-height: calc(100vh - 120px) !important;
+    padding-bottom: 80px;
+    display: block !important;
+}
+
+                .address-search-results {
+                    max-height: 200px;
+                    overflow-y: auto;
+                    border: 1px solid #e9ecef;
+                    border-radius: 4px;
+                }
+
+                .selected-addresses-container {
+                    margin-top: 10px;
                 }
             `}</style>
         </React.Fragment>

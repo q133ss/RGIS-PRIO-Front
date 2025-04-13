@@ -5,6 +5,7 @@ import {
   getEddsAccidents,
   getIncidentTypes,
   getIncidentResourceTypes,
+  updateEddsIncident,
   EddsResponse,
   EddsIncident
 } from '../../../services/api';
@@ -13,6 +14,12 @@ import EddsTable from '../common/EddsTable';
 import EddsDetailModal from '../common/EddsDetailModal';
 
 const MAX_API_RETRY_ATTEMPTS = 3;
+
+// Add this interface for the focused incident with specific address
+interface FocusedIncidentWithAddress {
+  incident: EddsIncident;
+  address: any; // Use your actual Address type here
+}
 
 const EddsAccidentsPage: React.FC = () => {
   const [view, setView] = useState<'table' | 'map'>('table');
@@ -24,6 +31,8 @@ const EddsAccidentsPage: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [currentIncident, setCurrentIncident] = useState<EddsIncident | null>(null);
+  // Keep track of the specific address that was clicked
+  const [currentAddress, setCurrentAddress] = useState<any>(null);
   const [activeFilters, setActiveFilters] = useState({
     incidentType: '',
     resourceType: '',
@@ -38,7 +47,9 @@ const EddsAccidentsPage: React.FC = () => {
   });
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [focusedIncident, setFocusedIncident] = useState<EddsIncident | null>(null);
+  
+  // Replace the old focusedIncident state with the new one that includes address
+  const [focusedIncidentWithAddress, setFocusedIncidentWithAddress] = useState<FocusedIncidentWithAddress | null>(null);
 
   useEffect(() => {
     loadData();
@@ -125,26 +136,86 @@ const EddsAccidentsPage: React.FC = () => {
   const handleViewDetails = (incident: EddsIncident) => {
     setDetailLoading(true);
     setCurrentIncident(incident);
+    setCurrentAddress(null); // Reset the current address
     setShowDetailModal(true);
     setTimeout(() => {
       setDetailLoading(false);
     }, 300);
   };
 
+  // New handler function that also accepts a specific address
+  const handleViewDetailsWithAddress = (incident: EddsIncident, address: any) => {
+    setDetailLoading(true);
+    setCurrentIncident(incident);
+    setCurrentAddress(address); // Store the specific address
+    setShowDetailModal(true);
+    setTimeout(() => {
+      setDetailLoading(false);
+    }, 300);
+  };
+
+  const handleSaveIncidentChanges = async (updatedIncident: EddsIncident): Promise<void> => {
+    try {
+      // Show a loading state
+      setDetailLoading(true);
+      
+      // Call the API to update the incident
+      const result = await updateEddsIncident(updatedIncident.id, updatedIncident);
+      
+      // Update the current incident with the result
+      setCurrentIncident(result);
+      
+      // If this incident is in our data, update it there as well
+      if (data && data.incidents && data.incidents.data) {
+        const updatedData = { ...data };
+        const incidentIndex = updatedData.incidents.data.findIndex(inc => inc.id === result.id);
+        
+        if (incidentIndex !== -1) {
+          updatedData.incidents.data[incidentIndex] = result;
+          setData(updatedData);
+        }
+      }
+      
+      // If this is the focused incident, update that as well
+      if (focusedIncidentWithAddress && focusedIncidentWithAddress.incident.id === result.id) {
+        setFocusedIncidentWithAddress({
+          incident: result,
+          address: focusedIncidentWithAddress.address
+        });
+      }
+      
+    } catch (error) {
+      console.error('Error updating incident:', error);
+      // Show error notification
+      setError('Ошибка при обновлении данных инцидента.');
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
   const toggleView = (newView: 'table' | 'map') => {
     setView(newView);
     
     // If we're switching to map view and we have a focused incident, we want to keep focusing on it
-    if (newView === 'map' && focusedIncident) {
-      // Focusing will happen automatically because the focusedIncident state is already set
+    if (newView === 'map' && focusedIncidentWithAddress) {
+      // Focusing will happen automatically because the focusedIncidentWithAddress state is already set
     } else {
       // Otherwise, clear the focused incident
-      setFocusedIncident(null);
+      setFocusedIncidentWithAddress(null);
     }
   };
 
   const handleShowOnMap = (incident: EddsIncident) => {
-    setFocusedIncident(incident);
+    // Find a valid address to focus on (first one with coordinates)
+    const address = incident.addresses && incident.addresses.length > 0 
+      ? incident.addresses.find(addr => addr.latitude && addr.longitude) || incident.addresses[0]
+      : null;
+    
+    setFocusedIncidentWithAddress({
+      incident: incident,
+      address: address
+    });
+    
     setView('map');
   };
 
@@ -272,8 +343,8 @@ const EddsAccidentsPage: React.FC = () => {
                   onResetFilters={handleResetFilters}
                   onRefresh={() => loadData(currentPage)}
                   onViewDetails={handleViewDetails}
-                  // Pass the focused incident to the map component
-                  focusedIncident={focusedIncident}
+                  onViewDetailsWithAddress={handleViewDetailsWithAddress}
+                  focusedIncidentWithAddress={focusedIncidentWithAddress}
                 />
               )}
             </Card.Body>
@@ -285,6 +356,10 @@ const EddsAccidentsPage: React.FC = () => {
         onHide={() => setShowDetailModal(false)}
         incident={currentIncident}
         loading={detailLoading}
+        onSave={handleSaveIncidentChanges}
+        // If you want to show the current address in the detail modal, 
+        // add a prop for it (assuming your EddsDetailModal can accept this)
+        // address={currentAddress}
       />
       
       <style>
