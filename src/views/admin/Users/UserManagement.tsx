@@ -186,7 +186,13 @@ const UserManagement: React.FC = () => {
         email: formData.email || '',
         telegram: formData.telegram || '',
         vk: formData.vk || '',
-        org_id: formData.org_id
+        org_id: formData.org_id,
+      center_lat: formData.center_lat,
+      center_lng: formData.center_lng,
+      south_west_lat: formData.south_west_lat,
+      south_west_lng: formData.south_west_lng,
+      north_east_lat: formData.north_east_lat,
+      north_east_lng: formData.north_east_lng
       };
 
       // Бэкенд требует правильные имена для полей пароля

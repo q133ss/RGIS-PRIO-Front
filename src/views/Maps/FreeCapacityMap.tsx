@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer } from 'react-bootstrap';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
   initializeApi,
   getFreeCapacityMapData,
   fetchUserCoords,
   getFreeCapacityResources,
   getFreeCapacityEquipment,
-  getOrganizations
+  getOrganizations,
+  TOKEN_KEY
 } from '../../services/api';
 import { MapBoundaries } from '../../services/api';
 
@@ -66,9 +67,11 @@ const FreeCapacityMap: React.FC = () => {
     org_id: null
   });
   const [activeFilters, setActiveFilters] = useState<number>(0);
+  const [isAuthError, setIsAuthError] = useState<boolean>(false);
 
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
+  const navigate = useNavigate();
 
   const fetchInitialData = async () => {
     try {
@@ -86,12 +89,23 @@ const FreeCapacityMap: React.FC = () => {
     }
   };
 
+  const handleReturnToDashboard = () => {
+    navigate('/dashboard');
+  };
+
+  const handleRelogin = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
+
   const fetchMapData = async (filterParams?: FilterState): Promise<void> => {
     try {
       console.log('Текущие фильтры:', filterParams);
 
       setLoading(true);
       setError(null);
+      setIsAuthError(false);
 
       await initializeApi();
 
@@ -100,7 +114,7 @@ const FreeCapacityMap: React.FC = () => {
       setMapBoundaries(coords);
 
       // Формируем параметры запроса
-      const params: HeatMapParams = {};
+      const params: any = {}; // Заменил HeatMapParams на any для совместимости
       if (filterParams?.resource_type_id) {
         params.resource_type_id = filterParams.resource_type_id;
       }
@@ -125,7 +139,21 @@ const FreeCapacityMap: React.FC = () => {
       }
     } catch (err) {
       console.error('Ошибка при загрузке данных:', err);
-      setError(err instanceof Error ? err.message : 'Неизвестная ошибка');
+      const errorMessage = err instanceof Error ? err.message : 'Неизвестная ошибка';
+      
+      // Проверяем, связана ли ошибка с авторизацией
+      if (
+        errorMessage.includes('авторизац') || 
+        errorMessage.includes('Unauthorized') || 
+        errorMessage.includes('Unauthenticated') ||
+        errorMessage.includes('токен') ||
+        errorMessage.includes('Token')
+      ) {
+        setIsAuthError(true);
+        setError('У вас нет прав доступа к странице свободных мощностей. Обратитесь к администратору системы.');
+      } else {
+        setError(errorMessage);
+      }
     } finally {
       setLoading(false);
     }
@@ -282,55 +310,57 @@ const FreeCapacityMap: React.FC = () => {
   }, [loading, areas, mapBoundaries]);
 
   return (
-      <React.Fragment>
-        <div className="page-header">
-          <div className="page-block">
-            <div className="row align-items-center">
-              <div className="col-md-12">
-                <div className="page-header-title">
-                  <h5 className="m-b-10">Карта свободных мощностей</h5>
-                </div>
-                <ul className="breadcrumb">
-                  <li className="breadcrumb-item">
-                    <Link to="/dashboard">Главная</Link>
-                  </li>
-                  <li className="breadcrumb-item">Карты</li>
-                  <li className="breadcrumb-item">Свободные мощности</li>
-                </ul>
+    <React.Fragment>
+      <div className="page-header">
+        <div className="page-block">
+          <div className="row align-items-center">
+            <div className="col-md-12">
+              <div className="page-header-title">
+                <h5 className="m-b-10">Карта свободных мощностей</h5>
               </div>
+              <ul className="breadcrumb">
+                <li className="breadcrumb-item">
+                  <Link to="/dashboard">Главная</Link>
+                </li>
+                <li className="breadcrumb-item">Карты</li>
+                <li className="breadcrumb-item">Свободные мощности</li>
+              </ul>
             </div>
           </div>
         </div>
+      </div>
 
-        <Card className="mb-3">
-          <Card.Body>
-            <div className="d-flex flex-wrap gap-3 justify-content-center">
-              <div className="d-flex align-items-center">
-                <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#1E90FF' }}></span>
-                <span>Водоснабжение</span>
-              </div>
-              <div className="d-flex align-items-center">
-                <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#FFD700' }}></span>
-                <span>Электричество</span>
-              </div>
-              <div className="d-flex align-items-center">
-                <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#FF4500' }}></span>
-                <span>Газ</span>
-              </div>
-              <div className="d-flex align-items-center">
-                <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#DC143C' }}></span>
-                <span>Теплоснабжение</span>
-              </div>
+      <Card className="mb-3">
+        <Card.Body>
+          <div className="d-flex flex-wrap gap-3 justify-content-center">
+            <div className="d-flex align-items-center">
+              <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#1E90FF' }}></span>
+              <span>Водоснабжение</span>
             </div>
-          </Card.Body>
-        </Card>
+            <div className="d-flex align-items-center">
+              <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#FFD700' }}></span>
+              <span>Электричество</span>
+            </div>
+            <div className="d-flex align-items-center">
+              <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#FF4500' }}></span>
+              <span>Газ</span>
+            </div>
+            <div className="d-flex align-items-center">
+              <span className="legend-dot rounded-circle me-2" style={{ backgroundColor: '#DC143C' }}></span>
+              <span>Теплоснабжение</span>
+            </div>
+          </div>
+        </Card.Body>
+      </Card>
 
+      {/* Блок с фильтрами доступен только если нет ошибки авторизации */}
+      {!isAuthError && (
         <Card className="mb-3">
           <Card.Header>
             <h5 className="mb-0">
               Фильтры
               {activeFilters > 0 && (
-                  <span className="ms-2 badge bg-primary">{activeFilters}</span>
+                <span className="ms-2 badge bg-primary">{activeFilters}</span>
               )}
             </h5>
           </Card.Header>
@@ -340,17 +370,17 @@ const FreeCapacityMap: React.FC = () => {
                 <Form.Group className="mb-3">
                   <Form.Label>Тип ресурса</Form.Label>
                   <Form.Select
-                      value={filters.resource_type_id || ''}
-                      onChange={(e) => setFilters({
-                        ...filters,
-                        resource_type_id: e.target.value ? Number(e.target.value) : null
-                      })}
+                    value={filters.resource_type_id || ''}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      resource_type_id: e.target.value ? Number(e.target.value) : null
+                    })}
                   >
                     <option value="">Все ресурсы</option>
                     {resources.map(resource => (
-                        <option key={resource.id} value={resource.id}>
-                          {resource.name}
-                        </option>
+                      <option key={resource.id} value={resource.id}>
+                        {resource.name}
+                      </option>
                     ))}
                   </Form.Select>
                 </Form.Group>
@@ -359,17 +389,17 @@ const FreeCapacityMap: React.FC = () => {
                 <Form.Group className="mb-3">
                   <Form.Label>Тип оборудования</Form.Label>
                   <Form.Select
-                      value={filters.equipment_type_id || ''}
-                      onChange={(e) => setFilters({
-                        ...filters,
-                        equipment_type_id: e.target.value ? Number(e.target.value) : null
-                      })}
+                    value={filters.equipment_type_id || ''}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      equipment_type_id: e.target.value ? Number(e.target.value) : null
+                    })}
                   >
                     <option value="">Все оборудование</option>
                     {equipment.map(item => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
+                      <option key={item.id} value={item.id}>
+                        {item.name}
+                      </option>
                     ))}
                   </Form.Select>
                 </Form.Group>
@@ -378,17 +408,17 @@ const FreeCapacityMap: React.FC = () => {
                 <Form.Group className="mb-3">
                   <Form.Label>Организация</Form.Label>
                   <Form.Select
-                      value={filters.org_id || ''}
-                      onChange={(e) => setFilters({
-                        ...filters,
-                        org_id: e.target.value ? Number(e.target.value) : null
-                      })}
+                    value={filters.org_id || ''}
+                    onChange={(e) => setFilters({
+                      ...filters,
+                      org_id: e.target.value ? Number(e.target.value) : null
+                    })}
                   >
                     <option value="">Все организации</option>
                     {organizations.map(org => (
-                        <option key={org.id} value={org.id}>
-                          {org.shortName || org.fullName}
-                        </option>
+                      <option key={org.id} value={org.id}>
+                        {org.shortName || org.fullName}
+                      </option>
                     ))}
                   </Form.Select>
                 </Form.Group>
@@ -404,150 +434,176 @@ const FreeCapacityMap: React.FC = () => {
             </div>
           </Card.Body>
         </Card>
+      )}
 
-        <Row>
-          <Col sm={12}>
-            <Card>
-              <Card.Body>
-                {error && (
-                    <div className="alert alert-danger" role="alert">
-                      {error}
+      <Row>
+        <Col sm={12}>
+          <Card>
+            <Card.Body>
+              {error && (
+                <div className="alert alert-danger" role="alert">
+                  {error}
+                  {isAuthError && (
+                    <div className="mt-3">
+                      <Button 
+                        variant="outline-primary" 
+                        size="sm" 
+                        onClick={handleReturnToDashboard}
+                        className="me-2"
+                      >
+                        <i className="ti ti-home me-1"></i> Вернуться на главную
+                      </Button>
+                      <Button 
+                        variant="outline-secondary" 
+                        size="sm" 
+                        onClick={handleRelogin}
+                      >
+                        <i className="ti ti-logout me-1"></i> Выйти и войти снова
+                      </Button>
                     </div>
-                )}
+                  )}
+                </div>
+              )}
 
-                {loading ? (
-                    <div className="text-center py-5">
-                      <Spinner animation="border" role="status">
-                        <span className="visually-hidden">Загрузка...</span>
-                      </Spinner>
-                      <p className="mt-2">Загрузка данных...</p>
-                    </div>
-                ) : areas.length === 0 ? (
-                    <div className="alert alert-info" role="alert">
-                      Нет данных о свободных мощностях для отображения
-                    </div>
-                ) : (
-                    <div className="map-container">
-                      <div id="map" ref={mapRef} className="map" style={{ width: '100%', height: '600px' }}></div>
-                    </div>
-                )}
-              </Card.Body>
-            </Card>
-          </Col>
-        </Row>
+              {loading ? (
+                <div className="text-center py-5">
+                  <Spinner animation="border" role="status">
+                    <span className="visually-hidden">Загрузка...</span>
+                  </Spinner>
+                  <p className="mt-2">Загрузка данных...</p>
+                </div>
+              ) : isAuthError ? (
+                <div className="text-center py-5">
+                  <i className="fas fa-lock text-danger" style={{ fontSize: '4rem' }}></i>
+                  <h4 className="mt-3 mb-0">Доступ запрещен</h4>
+                  <p className="text-muted mt-2">У вас нет прав для просмотра карты свободных мощностей</p>
+                </div>
+              ) : areas.length === 0 ? (
+                <div className="alert alert-info" role="alert">
+                  Нет данных о свободных мощностях для отображения
+                </div>
+              ) : (
+                <div className="map-container">
+                  <div id="map" ref={mapRef} className="map" style={{ width: '100%', height: '600px' }}></div>
+                </div>
+              )}
+            </Card.Body>
+          </Card>
+        </Col>
+      </Row>
 
-        <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
-          <Modal.Header closeButton className="bg-light">
-            <Modal.Title>
-              {selectedArea?.resource.name || 'Информация о свободной мощности'}
-            </Modal.Title>
-          </Modal.Header>
-          <Modal.Body>
-            {selectedArea && (
-                <>
-                  <div className="row mb-3">
-                    <div className="col-md-6">
-                      <div className="d-flex align-items-center mb-2">
-                        <span className="badge bg-primary me-2">Ресурс</span>
-                        <span>{selectedArea.resource.name}</span>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="d-flex align-items-center mb-2">
-                        <span className="badge bg-primary me-2">Оборудование</span>
-                        <span>{selectedArea.equipment.name}</span>
-                      </div>
+      <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
+        <Modal.Header closeButton className="bg-light">
+          <Modal.Title>
+            {selectedArea?.resource.name || 'Информация о свободной мощности'}
+          </Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {selectedArea && (
+            <>
+              <div className="row mb-3">
+                <div className="col-md-6">
+                  <div className="d-flex align-items-center mb-2">
+                    <span className="badge bg-primary me-2">Ресурс</span>
+                    <span>{selectedArea.resource.name}</span>
+                  </div>
+                </div>
+                <div className="col-md-6">
+                  <div className="d-flex align-items-center mb-2">
+                    <span className="badge bg-primary me-2">Оборудование</span>
+                    <span>{selectedArea.equipment.name}</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-4 p-3 border-start border-4 border-info bg-light">
+                <div className="d-flex align-items-center mb-3">
+                  <i className="fas fa-building me-2 text-info fs-4"></i>
+                  <div className="w-100">
+                    <strong>Организация:</strong><br />
+                    <div className="d-flex justify-content-between align-items-center flex-wrap">
+                      <span>{selectedArea.org.shortName || selectedArea.org.fullName}</span>
+                      {selectedArea.org.url && (
+                        <a
+                          href={selectedArea.org.url.startsWith('http') ? selectedArea.org.url : `https://${selectedArea.org.url}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn btn-sm btn-outline-primary mt-1"
+                        >
+                          <i className="fas fa-external-link-alt me-1"></i> Сайт
+                        </a>
+                      )}
                     </div>
                   </div>
-
-                  <div className="mb-4 p-3 border-start border-4 border-info bg-light">
-                    <div className="d-flex align-items-center mb-3">
-                      <i className="fas fa-building me-2 text-info fs-4"></i>
-                      <div className="w-100">
-                        <strong>Организация:</strong><br />
-                        <div className="d-flex justify-content-between align-items-center flex-wrap">
-                          <span>{selectedArea.org.shortName || selectedArea.org.fullName}</span>
-                          {selectedArea.org.url && (
-                              <a
-                                  href={selectedArea.org.url.startsWith('http') ? selectedArea.org.url : `https://${selectedArea.org.url}`}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="btn btn-sm btn-outline-primary mt-1"
-                              >
-                                <i className="fas fa-external-link-alt me-1"></i> Сайт
-                              </a>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="row mt-2">
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">ИНН:</small>
-                        <div className="fw-bold">{selectedArea.org.inn}</div>
-                      </div>
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">ОГРН:</small>
-                        <div className="fw-bold">{selectedArea.org.ogrn}</div>
-                      </div>
-                    </div>
-                    <div className="row mt-2">
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">Телефон:</small>
-                        <div className="fw-bold">{selectedArea.org.phone}</div>
-                      </div>
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">Адрес:</small>
-                        <div className="fw-bold">{selectedArea.org.orgAddress}</div>
-                      </div>
-                    </div>
+                </div>
+                <div className="row mt-2">
+                  <div className="col-md-6">
+                    <small className="text-muted d-block mb-1">ИНН:</small>
+                    <div className="fw-bold">{selectedArea.org.inn}</div>
                   </div>
-
-                  <div className="row mt-3">
-                    <div className="col-md-6">
-                      <small className="text-muted">
-                        <i className="far fa-calendar-plus me-1"></i>
-                        Создан: {formatDate(selectedArea.created_at)}
-                      </small>
-                    </div>
-                    <div className="col-md-6">
-                      <small className="text-muted">
-                        <i className="far fa-calendar-alt me-1"></i>
-                        Обновлен: {formatDate(selectedArea.updated_at)}
-                      </small>
-                    </div>
+                  <div className="col-md-6">
+                    <small className="text-muted d-block mb-1">ОГРН:</small>
+                    <div className="fw-bold">{selectedArea.org.ogrn}</div>
                   </div>
-                </>
-            )}
-          </Modal.Body>
-          <Modal.Footer>
-            <Button variant="secondary" onClick={() => setShowModal(false)}>
-              Закрыть
-            </Button>
-          </Modal.Footer>
-        </Modal>
+                </div>
+                <div className="row mt-2">
+                  <div className="col-md-6">
+                    <small className="text-muted d-block mb-1">Телефон:</small>
+                    <div className="fw-bold">{selectedArea.org.phone}</div>
+                  </div>
+                  <div className="col-md-6">
+                    <small className="text-muted d-block mb-1">Адрес:</small>
+                    <div className="fw-bold">{selectedArea.org.orgAddress}</div>
+                  </div>
+                </div>
+              </div>
 
-        <ToastContainer
-            position="top-end"
-            className="p-3"
-            style={{ zIndex: 9999 }}
+              <div className="row mt-3">
+                <div className="col-md-6">
+                  <small className="text-muted">
+                    <i className="far fa-calendar-plus me-1"></i>
+                    Создан: {formatDate(selectedArea.created_at)}
+                  </small>
+                </div>
+                <div className="col-md-6">
+                  <small className="text-muted">
+                    <i className="far fa-calendar-alt me-1"></i>
+                    Обновлен: {formatDate(selectedArea.updated_at)}
+                  </small>
+                </div>
+              </div>
+            </>
+          )}
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={() => setShowModal(false)}>
+            Закрыть
+          </Button>
+        </Modal.Footer>
+      </Modal>
+
+      <ToastContainer
+        position="top-end"
+        className="p-3"
+        style={{ zIndex: 9999 }}
+      >
+        <Toast
+          show={false}
+          onClose={() => {}}
+          delay={5000}
+          autohide
+          bg="info"
         >
-          <Toast
-              show={false}
-              onClose={() => {}}
-              delay={5000}
-              autohide
-              bg="info"
-          >
-            <Toast.Header>
-              <strong className="me-auto">Уведомление</strong>
-            </Toast.Header>
-            <Toast.Body className="text-white">
-              {/* Сообщение уведомления будет здесь */}
-            </Toast.Body>
-          </Toast>
-        </ToastContainer>
+          <Toast.Header>
+            <strong className="me-auto">Уведомление</strong>
+          </Toast.Header>
+          <Toast.Body className="text-white">
+            {/* Сообщение уведомления будет здесь */}
+          </Toast.Body>
+        </Toast>
+      </ToastContainer>
 
-        <style>{`
+      <style>{`
         .map-container {
           width: 100%;
           height: 100%;
@@ -597,7 +653,7 @@ const FreeCapacityMap: React.FC = () => {
           box-shadow: 0 2px 5px rgba(0,0,0,0.1);
         }
       `}</style>
-      </React.Fragment>
+    </React.Fragment>
   );
 };
 

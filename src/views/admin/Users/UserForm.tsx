@@ -35,7 +35,14 @@ const UserForm: React.FC<UserFormProps> = ({
     password: '',
     password_confirmation: '',
     role_ids: [] as number[],
-    permission_ids: [] as number[]
+    permission_ids: [] as number[],
+    // Добавляем поля для настроек карты
+    center_lat: '',
+    center_lng: '',
+    south_west_lat: '',
+    south_west_lng: '',
+    north_east_lat: '',
+    north_east_lng: ''
   });
 
   const [roleFilter, setRoleFilter] = useState('');
@@ -58,7 +65,14 @@ const UserForm: React.FC<UserFormProps> = ({
         password: '',
         password_confirmation: '',
         role_ids: user.roles?.map(role => role.id) || [],
-        permission_ids: user.permissions?.map(permission => permission.id) || []
+        permission_ids: user.permissions?.map(permission => permission.id) || [],
+        // Заполняем поля для карты, если они есть
+        center_lat: user.center_lat || '51.660772',
+        center_lng: user.center_lng || '39.200289',
+        south_west_lat: user.south_west_lat || '51.55',
+        south_west_lng: user.south_west_lng || '39.05',
+        north_east_lat: user.north_east_lat || '51.75',
+        north_east_lng: user.north_east_lng || '39.45'
       });
     } else {
       setFormData({
@@ -74,7 +88,14 @@ const UserForm: React.FC<UserFormProps> = ({
         password: '',
         password_confirmation: '',
         role_ids: [],
-        permission_ids: []
+        permission_ids: [],
+        // Устанавливаем значения по умолчанию для карты
+        center_lat: '51.660772',
+        center_lng: '39.200289',
+        south_west_lat: '51.55',
+        south_west_lng: '39.05',
+        north_east_lat: '51.75',
+        north_east_lng: '39.45'
       });
     }
   }, [user]);
@@ -162,6 +183,12 @@ const UserForm: React.FC<UserFormProps> = ({
     return !!validationErrors.roles;
   };
 
+  // Проверка ошибок в настройках карты
+  const hasMapTabErrors = () => {
+    const mapFields = ['center_lat', 'center_lng', 'south_west_lat', 'south_west_lng', 'north_east_lat', 'north_east_lng'];
+    return mapFields.some(field => !!validationErrors[field]);
+  };
+
   // Функция валидации телефона (более гибкая)
   const validatePhone = (phone: string): boolean => {
     if (!phone) return true; // Пустое значение допустимо, если не обязательно
@@ -175,6 +202,27 @@ const UserForm: React.FC<UserFormProps> = ({
     }
     
     return false;
+  };
+
+  // Валидация координат
+  const validateCoordinate = (value: string, field: string): boolean => {
+    if (!value) return false;
+    
+    const floatValue = parseFloat(value);
+    
+    // Проверяем, что значение является числом
+    if (isNaN(floatValue)) return false;
+    
+    // Дополнительные проверки в зависимости от типа координаты
+    if (field.includes('lat')) {
+      // Широта должна быть в диапазоне -90 до 90
+      return floatValue >= -90 && floatValue <= 90;
+    } else if (field.includes('lng')) {
+      // Долгота должна быть в диапазоне -180 до 180
+      return floatValue >= -180 && floatValue <= 180;
+    }
+    
+    return true;
   };
 
   const validateForm = (): boolean => {
@@ -245,6 +293,34 @@ const UserForm: React.FC<UserFormProps> = ({
       }
     }
 
+    // Проверяем координаты
+    if (!validateCoordinate(formData.center_lat, 'center_lat')) {
+      errors.center_lat = 'Введите корректную широту центра (-90 до 90)';
+    }
+    if (!validateCoordinate(formData.center_lng, 'center_lng')) {
+      errors.center_lng = 'Введите корректную долготу центра (-180 до 180)';
+    }
+    if (!validateCoordinate(formData.south_west_lat, 'south_west_lat')) {
+      errors.south_west_lat = 'Введите корректную широту ЮЗ точки (-90 до 90)';
+    }
+    if (!validateCoordinate(formData.south_west_lng, 'south_west_lng')) {
+      errors.south_west_lng = 'Введите корректную долготу ЮЗ точки (-180 до 180)';
+    }
+    if (!validateCoordinate(formData.north_east_lat, 'north_east_lat')) {
+      errors.north_east_lat = 'Введите корректную широту СВ точки (-90 до 90)';
+    }
+    if (!validateCoordinate(formData.north_east_lng, 'north_east_lng')) {
+      errors.north_east_lng = 'Введите корректную долготу СВ точки (-180 до 180)';
+    }
+
+    // Дополнительная проверка ограничений карты
+    if (parseFloat(formData.north_east_lat) <= parseFloat(formData.south_west_lat)) {
+      errors.north_east_lat = 'Северная граница должна быть больше южной';
+    }
+    if (parseFloat(formData.north_east_lng) <= parseFloat(formData.south_west_lng)) {
+      errors.north_east_lng = 'Восточная граница должна быть больше западной';
+    }
+
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -258,6 +334,8 @@ const UserForm: React.FC<UserFormProps> = ({
         setActiveTab('basic');
       } else if (hasRolesTabErrors() && activeTab !== 'roles') {
         setActiveTab('roles');
+      } else if (hasMapTabErrors() && activeTab !== 'map') {
+        setActiveTab('map');
       }
       return;
     }
@@ -570,6 +648,146 @@ const UserForm: React.FC<UserFormProps> = ({
                     <div className="text-center py-3"><p className="text-muted mb-0">Доступы не найдены</p></div>
                   )}
                 </div>
+              </div>
+            </Tab>
+            
+            {/* Добавляем новую вкладку для настроек карты */}
+            <Tab 
+              eventKey="map" 
+              title={
+                <span>
+                  Настройки карты
+                  {hasMapTabErrors() && <span className="text-danger ms-2">*</span>}
+                </span>
+              }
+            >
+              <div className="p-3">
+                <Alert variant="info">
+                  Здесь можно настроить центр и границы карты для данного пользователя.
+                </Alert>
+                
+                <Row>
+                  <Col lg={6} className="mb-3">
+                    <h5>Центр карты</h5>
+                    <Row>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="centerLat">
+                          <Form.Label>Широта центра <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="center_lat"
+                            value={formData.center_lat}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.center_lat}
+                            disabled={loading}
+                            placeholder="51.660772"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.center_lat}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="centerLng">
+                          <Form.Label>Долгота центра <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="center_lng"
+                            value={formData.center_lng}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.center_lng}
+                            disabled={loading}
+                            placeholder="39.200289"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.center_lng}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Col>
+                  
+                  <Col lg={6} className="mb-3">
+                    <h5>Границы карты (опционально)</h5>
+                    <Alert variant="secondary" className="mb-3">
+                      Границы используются для ограничения области видимости на карте.
+                    </Alert>
+                  </Col>
+                </Row>
+                
+                <Row>
+                  <Col lg={6} className="mb-3">
+                    <h5>Юго-западная точка (нижний левый угол)</h5>
+                    <Row>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="southWestLat">
+                          <Form.Label>Широта юго-запада <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="south_west_lat"
+                            value={formData.south_west_lat}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.south_west_lat}
+                            disabled={loading}
+                            placeholder="51.55"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.south_west_lat}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="southWestLng">
+                          <Form.Label>Долгота юго-запада <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="south_west_lng"
+                            value={formData.south_west_lng}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.south_west_lng}
+                            disabled={loading}
+                            placeholder="39.05"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.south_west_lng}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Col>
+                  
+                  <Col lg={6} className="mb-3">
+                    <h5>Северо-восточная точка (верхний правый угол)</h5>
+                    <Row>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="northEastLat">
+                          <Form.Label>Широта северо-востока <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="north_east_lat"
+                            value={formData.north_east_lat}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.north_east_lat}
+                            disabled={loading}
+                            placeholder="51.75"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.north_east_lat}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                      <Col md={6} className="mb-3">
+                        <Form.Group controlId="northEastLng">
+                          <Form.Label>Долгота северо-востока <span className="text-danger">*</span></Form.Label>
+                          <Form.Control
+                            type="text"
+                            name="north_east_lng"
+                            value={formData.north_east_lng}
+                            onChange={handleChange}
+                            isInvalid={!!validationErrors.north_east_lng}
+                            disabled={loading}
+                            placeholder="39.45"
+                          />
+                          <Form.Control.Feedback type="invalid">{validationErrors.north_east_lng}</Form.Control.Feedback>
+                        </Form.Group>
+                      </Col>
+                    </Row>
+                  </Col>
+                </Row>
+                
+                <Alert variant="warning">
+                  <strong>Важно!</strong> Северная граница должна быть больше южной, а восточная граница должна быть больше западной.
+                </Alert>
               </div>
             </Tab>
           </Tabs>

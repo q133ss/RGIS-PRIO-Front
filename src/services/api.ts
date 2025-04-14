@@ -67,6 +67,7 @@ export const getToken = (): string | null => {
 };
 
 // Базовая функция для выполнения запросов с авторизацией
+// Базовая функция для выполнения запросов с авторизацией
 const fetchAPI = async (endpoint: string, options: RequestInit = {}): Promise<any> => {
   const token = getToken();
   
@@ -103,6 +104,14 @@ const fetchAPI = async (endpoint: string, options: RequestInit = {}): Promise<an
         // Токен недействителен или истек
         localStorage.removeItem(TOKEN_KEY);
         throw new Error('Необходима повторная авторизация');
+      }
+      
+      // Добавляем специальную обработку для 403
+      if (response.status === 403) {
+        // Пользователь авторизован, но у него нет прав для доступа к ресурсу
+        // НЕ удаляем токен, так как пользователь все еще авторизован
+        console.warn('Доступ запрещен: недостаточно прав');
+        throw new Error('У вас недостаточно прав для выполнения этого действия');
       }
       
       try {
@@ -172,15 +181,22 @@ export const initializeApi = async (): Promise<void> => {
     const token = getToken();
     if (token) {
       try {
-        // Пробуем сделать тестовый запрос для проверки валидности токена
-        await fetchAPI('/hs-type');
+        // Используем эндпоинт для получения информации о текущем пользователе
+        // К которому должны иметь доступ все авторизованные пользователи
+        await fetchAPI('/me'); // или другой подходящий эндпоинт
         console.log('Существующий токен действителен');
-        return; // Если запрос прошел, значит токен рабочий
+        return;
       } catch (error) {
-        console.log('Токен недействителен');
-        localStorage.removeItem(TOKEN_KEY);
-        // Не делаем автоматическую авторизацию - пользователь должен ввести логин/пароль
-        throw new Error('Требуется авторизация');
+        // Проверяем конкретно ошибку 401 (Unauthorized)
+        if (error instanceof Error && error.message.includes('401')) {
+          console.log('Токен недействителен');
+          localStorage.removeItem(TOKEN_KEY);
+          throw new Error('Необходима повторная авторизация');
+        }
+        
+        // Для других ошибок (включая 403) не удаляем токен
+        console.warn('Ошибка при проверке токена, но токен не удален:', error);
+        return;
       }
     } else {
       throw new Error('Требуется авторизация');
@@ -770,6 +786,12 @@ export interface SettingsUser {
   email: string | null;
   telegram: string | null;
   vk: string | null;
+  center_lat?: string | number;
+  center_lng?: string | number;
+  south_west_lat?: string | number;
+  south_west_lng?: string | number;
+  north_east_lat?: string | number;
+  north_east_lng?: string | number;
 }
 
 export interface Organization {
@@ -793,9 +815,15 @@ export interface SettingsUserCreateData {
   phone: string;
   login: string;
   password: string;
-  password_confirm?: string; // Добавьте это поле, если его нет
-  permissions?: string[]; // Array of permission slugs
-  roles?: string[]; // Array of role slugs
+  password_confirm?: string;
+  permissions?: string[];
+  roles?: string[];
+  center_lat?: string | number;
+  center_lng?: string | number;
+  south_west_lat?: string | number;
+  south_west_lng?: string | number;
+  north_east_lat?: string | number;
+  north_east_lng?: string | number;
 }
 
 export interface SettingsUserUpdateData {
@@ -807,11 +835,16 @@ export interface SettingsUserUpdateData {
   login?: string;
   password?: string;
   password_confirmation?: string;
-  permissions?: string[]; // Array of permission slugs
-  roles?: string[]; // Array of role slugs
+  permissions?: string[];
+  roles?: string[];
+  center_lat?: string | number;
+  center_lng?: string | number;
+  south_west_lat?: string | number;
+  south_west_lng?: string | number;
+  north_east_lat?: string | number;
+  north_east_lng?: string | number;
 }
 
-// Role management functions
 
 // Get list of all roles
 export const getRolesList = async (): Promise<Role[]> => {
