@@ -1025,9 +1025,20 @@ const HeatSources: React.FC = () => {
         }
     };
 
-    const handleViewPassport = (item: HeatSource) => {
-        setCurrentItem(item);
-        setShowPassportModal(true);
+    const handleViewPassport = async (item: HeatSource) => {
+        try {
+            setFormLoading(true);
+            const details = await getHeatSourceDetails(item.id);
+            setCurrentItem(details);
+            setFormLoading(false);
+            setShowPassportModal(true);
+        } catch (error) {
+            console.error('Ошибка получения деталей для паспорта:', error);
+            setFormLoading(false);
+            // Fall back to using the row data if API call fails
+            setCurrentItem(item);
+            setShowPassportModal(true);
+        }
     };
 
     const getTypeIdByName = (name: string): number => {
@@ -1581,18 +1592,38 @@ const HeatSources: React.FC = () => {
     );
 
     const renderPassportModal = () => {
-        if (!currentItem || !currentItem.passport) {
+        if (!currentItem) {
             return null;
         }
 
-        // Helper to get address name from ID
-        const getAddressName = (id: number) => {
-            const address = addressMappings[id];
-            if (address) {
-                return getAddressDisplayName(address);
-            }
-            return `Адрес ${id}`;
-        };
+        if (formLoading) {
+            return (
+                <Modal
+                    show={showPassportModal}
+                    onHide={() => setShowPassportModal(false)}
+                    size="lg"
+                >
+                    <Modal.Header closeButton>
+                        <Modal.Title className="f-w-600">
+                            <i className="ph-duotone ph-file-text me-2"></i>
+                            Паспорт теплоисточника
+                        </Modal.Title>
+                    </Modal.Header>
+                    <Modal.Body>
+                        <div className="text-center py-5">
+                            <Spinner animation="border" role="status">
+                                <span className="visually-hidden">Загрузка...</span>
+                            </Spinner>
+                            <p className="mt-2">Загрузка данных паспорта...</p>
+                        </div>
+                    </Modal.Body>
+                </Modal>
+            );
+        }
+
+        if (!currentItem.passport) {
+            return null;
+        }
 
         return (
             <Modal
@@ -1638,6 +1669,21 @@ const HeatSources: React.FC = () => {
                                 </div>
                                 <div className="col-md-12">
                                     <p><strong>Адрес:</strong> {currentItem.address}</p>
+                                    {currentItem.supply_address_ids && currentItem.supply_address_ids.length > 0 && (
+                                        <div className="address-list mt-2">
+                                            <p><strong>Подключенные адреса:</strong></p>
+                                            <ul>
+                                                {currentItem.supply_address_ids.map(addressId => {
+                                                    const address = addressMappings[addressId];
+                                                    return (
+                                                        <li key={addressId}>
+                                                            {address ? getAddressDisplayName(address) : `Адрес ${addressId}`}
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
+                                    )}
                                 </div>
                                 <div className="col-md-6">
                                     <p><strong>Период работы:</strong> {currentItem.operationPeriod}</p>
@@ -1680,9 +1726,14 @@ const HeatSources: React.FC = () => {
                                     {currentItem.supply_address_ids && Array.isArray(currentItem.supply_address_ids) && currentItem.supply_address_ids.length > 0 ? (
                                         <div className="address-list">
                                             <ul>
-                                                {currentItem.supply_address_ids.map((addressId, index) => (
-                                                    <li key={index}>{getAddressName(addressId)}</li>
-                                                ))}
+                                                {currentItem.supply_address_ids.map((addressId, index) => {
+                                                    const address = addressMappings[addressId];
+                                                    return (
+                                                        <li key={index}>
+                                                            {address ? getAddressDisplayName(address) : `Адрес ${addressId}`}
+                                                        </li>
+                                                    );
+                                                })}
                                             </ul>
                                         </div>
                                     ) : (
