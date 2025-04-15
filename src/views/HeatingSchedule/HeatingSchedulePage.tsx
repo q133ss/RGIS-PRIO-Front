@@ -49,14 +49,13 @@ const HeatingSchedulePage: React.FC = () => {
     houseNumbers: [] as string[],
   });
 
-  const [filterCities, setFilterCities] = useState<City[]>([]);
-  const [filterStreets, setFilterStreets] = useState<Street[]>([]);
+  const [_filterCities, _setFilterCities] = useState<City[]>([]);
+  const [_filterStreets, _setFilterStreets] = useState<Street[]>([]);
 
   useEffect(() => {
     const loadCities = async () => {
       try {
-        const response = await getCities(); // response содержит свойство data с массивом городов
-        const citiesData = response.data; // Получаем массив городов из response.data
+        const citiesData = await getCities(); // API returns the cities array directly
 
         setFilterOptions(prev => ({
           ...prev,
@@ -113,7 +112,7 @@ const HeatingSchedulePage: React.FC = () => {
     connection_omsu_order_title: null,
     connection_omsu_order_additional_info: null
   });
-  const [modalCities, setModalCities] = useState<City[]>([]);
+  const [modalCities, _setModalCities] = useState<City[]>([]);
   const [modalStreets, setModalStreets] = useState<Street[]>([]);
   const [modalBuildings, setModalBuildings] = useState<MkdBuilding[]>([]);
   const [modalCityId, setModalCityId] = useState<number | ''>('');
@@ -142,7 +141,7 @@ const HeatingSchedulePage: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [authError, setAuthError] = useState<boolean>(false);
   const [apiRetryCount, setApiRetryCount] = useState<number>(0);
-  const [apiSuccessful, setApiSuccessful] = useState<boolean>(false);
+  const [_apiSuccessful, setApiSuccessful] = useState<boolean>(false);
 
   useEffect(() => {
     const savedColumns = localStorage.getItem('heatingScheduleColumns');
@@ -245,7 +244,7 @@ const HeatingSchedulePage: React.FC = () => {
     const loadFilterCities = async () => {
       try {
         const citiesData = await getCities();
-        setFilterCities(Array.isArray(citiesData) ? citiesData : []);
+        _setFilterCities(Array.isArray(citiesData) ? citiesData : []);
       } catch (error: any) {
         // обработка ошибки
       }
@@ -256,20 +255,20 @@ const HeatingSchedulePage: React.FC = () => {
   useEffect(() => {
     const loadFilterStreets = async () => {
       if (!state.filterCityId) {
-        setFilterStreets([]);
+        _setFilterStreets([]);
         return;
       }
       try {
         const streetsData = await getStreets(state.filterCityId);
-        setFilterStreets(streetsData);
+        _setFilterStreets(streetsData);
       } catch (error: any) {
-        setFilterStreets([]);
+        _setFilterStreets([]);
       }
     };
     if (typeof state.filterCityId === 'number') {
       loadFilterStreets();
     } else {
-      setFilterStreets([]);
+      _setFilterStreets([]);
     }
   }, [state.filterCityId]);
 
@@ -580,15 +579,7 @@ const HeatingSchedulePage: React.FC = () => {
     loadHeatingSchedule();
   };
 
-  const handleResetFilters = () => {
-    setState(prev => ({
-      ...prev,
-      filterCityId: undefined,
-      filterStreetId: undefined,
-      filterHouseNumber: '',
-      error: null
-    }));
-  };
+  // Reset filters function removed as it's not being used
 
   const handleReauth = async () => {
     try {
