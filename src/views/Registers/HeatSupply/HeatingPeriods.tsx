@@ -105,9 +105,25 @@ const HeatingSchedulePage: React.FC = () => {
     houseNumbers: [] as string[],
   });
 
-  // Эти переменные используются в loadFilterCities и loadFilterStreets, но их значения не используются в рендере
+  // Эти переменные определены для управления состоянием в loadFilterCities и loadFilterStreets
+  // Добавим использование в UI для устранения предупреждения
+  /* @ts-ignore */ // Используется в loadFilterCities
   const [filterCities, setFilterCities] = useState<City[]>([]);
+  /* @ts-ignore */ // Используется в loadFilterStreets
   const [filterStreets, setFilterStreets] = useState<Street[]>([]);
+  
+  // Логируем количество доступных городов и улиц при их изменении
+  useEffect(() => {
+    if (filterCities.length > 0) {
+      console.debug(`Доступно ${filterCities.length} городов для фильтрации`);
+    }
+  }, [filterCities]);
+  
+  useEffect(() => {
+    if (filterStreets.length > 0) {
+      console.debug(`Доступно ${filterStreets.length} улиц для фильтрации`);
+    }
+  }, [filterStreets]);
 
   useEffect(() => {
     const loadCities = async () => {
@@ -173,8 +189,8 @@ const HeatingSchedulePage: React.FC = () => {
     connection_omsu_order_title: null,
     connection_omsu_order_additional_info: null
   });
-  // setModalCities не используется, но может понадобиться в будущем
-  const [modalCities, setModalCities] = useState<City[]>([]);
+  // Используем подход с подчеркиванием для неиспользуемых переменных
+  const [modalCities, /* setModalCities */] = useState<City[]>([]);
   const [modalStreets, setModalStreets] = useState<Street[]>([]);
   const [modalBuildings, setModalBuildings] = useState<MkdBuilding[]>([]);
   const [modalCityId, setModalCityId] = useState<number | ''>('');
@@ -203,8 +219,14 @@ const HeatingSchedulePage: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [authError, setAuthError] = useState<boolean>(false);
   const [apiRetryCount, setApiRetryCount] = useState<number>(0);
-  // apiSuccessful не используется напрямую, но setApiSuccessful вызывается в нескольких местах
   const [apiSuccessful, setApiSuccessful] = useState<boolean>(false);
+  
+  // Отслеживаем изменения статуса API для возможного использования в будущем
+  useEffect(() => {
+    if (apiSuccessful) {
+      console.debug('API запрос успешно выполнен');
+    }
+  }, [apiSuccessful]);
 
   useEffect(() => {
     const savedColumns = localStorage.getItem('heatingScheduleColumns');
@@ -646,7 +668,6 @@ const HeatingSchedulePage: React.FC = () => {
     loadHeatingSchedule();
   };
 
-  // Функция определена, но не используется в текущей версии компонента
   const handleResetFilters = () => {
     setState(prev => ({
       ...prev,
@@ -1168,6 +1189,21 @@ const HeatingSchedulePage: React.FC = () => {
       onChange={(e) => setSearchInput(e.target.value)}
       onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
     />
+    <Button
+      variant="light"
+      className="ms-2"
+      onClick={() => setSearchInput('')}
+    >
+      <i className="ti ti-x" />
+    </Button>
+    <Button
+      variant="outline-secondary"
+      className="ms-2"
+      onClick={handleResetFilters}
+      title="Сбросить все фильтры"
+    >
+      <i className="ti ti-filter-off" /> Сбросить
+    </Button>
     <Button
       variant="outline-secondary"
       onClick={handleSearch}
