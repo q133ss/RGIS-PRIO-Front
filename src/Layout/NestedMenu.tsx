@@ -4,6 +4,7 @@ import FeatherIcon from "feather-icons-react";
 import { useTranslation } from "react-i18next";
 import { checkPermissionWithCache, getStoredPermissions } from "../services/permissionsService";
 
+
 interface MenuItem {
   id: number | string;
   label: string;
@@ -56,19 +57,45 @@ const NestedMenu: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
         }
       } catch (error) {
         console.error("Ошибка при загрузке данных пользователя:", error);
+      } finally {
+        // Даже если произошла ошибка, перестаем показывать загрузку
+        setIsLoading(false);
       }
     };
     
     loadUserData();
   }, []);
 
-  // Проверка, является ли пользователь администратором
+  // Проверка, является ли пользователь администратором (улучшенная)
   const isAdmin = useCallback(() => {
-    return userRoles.some(role => 
-      role === 'admin' || 
-      role === 'super_admin' || 
-      role.toLowerCase().includes('admin')
-    );
+    if (!userRoles || userRoles.length === 0) {
+      // Проверка localStorage напрямую как запасной вариант
+      try {
+        const userStr = localStorage.getItem('user');
+        if (userStr) {
+          const user = JSON.parse(userStr);
+          if (user.roles && Array.isArray(user.roles)) {
+            return user.roles.some((role: any) => {
+              const roleName = typeof role === 'string' ? role : (role.slug || role.name || '');
+              return roleName === 'admin' || roleName === 'super_admin' || roleName.toLowerCase().includes('admin');
+            });
+          } else if (user.role) {
+            const roleName = typeof user.role === 'string' ? 
+              user.role : (user.role.slug || user.role.name || '');
+            return roleName === 'admin' || roleName === 'super_admin' || roleName.toLowerCase().includes('admin');
+          }
+        }
+      } catch (e) {
+        console.error("Ошибка при проверке admin прав:", e);
+      }
+      return false;
+    }
+    
+    return userRoles.some(role => {
+      return role === 'admin' ||
+        role === 'super_admin' ||
+        role.toLowerCase().includes('admin');
+    });
   }, [userRoles]);
 
   // Функция для проверки доступа к элементу меню
@@ -141,37 +168,37 @@ const NestedMenu: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
     }
   };
 
-  // Улучшенная функция фильтрации с правильными проверками прав
+  // Улучшенная функция фильтрации с исправленными проверками прав
   const filterMenuItems = async (items: MenuItem[]): Promise<MenuItem[]> => {
     // Обновляем соответствие URL и прав согласно фактическим правам из API
     const keyPagePermissions: Record<string, string | string[]> = {
       // Карты и свободные мощности
-      '/maps/free-capacity': 'view_capacity',      // Исправлено!
-      '/free-capacity-list': 'view_capacity',      // Исправлено!
-      '/maps/heat-supply': 'view_hs_map',          // Исправлено!
-      '/maps/communal-services': 'view_mkd',       // Для карты коммунальных услуг
+      '/maps/free-capacity': 'view_capacity',
+      '/free-capacity-list': 'view_capacity',
+      '/maps/heat-supply': 'view_hs_map',
+      '/maps/communal-services': 'view_mkd',
       
       // Аварии и инциденты
       '/incidents': 'view_emergency',
       '/incidents/map': 'view_emergency',
       '/outages': 'view_emergency',
       
-      // ЕДДС
-      '/edds/accidents': 'view_edds',
-      '/edds/planned-works': 'view_edds',
-      '/edds/seasonal-works': 'view_edds',
+      // ЕДДС - ИСПРАВЛЕНО: больше не требуем view_edds для подстраниц
+      '/edds/accidents': 'view_emergency',
+      '/edds/planned-works': 'view_emergency',
+      '/edds/seasonal-works': 'view_emergency',
       
       // МКД
       '/mkd': 'view_mkd',
       '/buildings-list': 'view_mkd',
-      '/registers/mkd/schedules': 'view_mkd_heating_periods',
+      '/registers/mkd/schedules': 'view_mkd',
       
       // Теплоисточники
       '/heat-sources': 'view_hs',
       '/registers/heat-supply/heating-periods': 'view_hs_period',
       
-      // Мониторинг
-      '/monitoring': 'view_edds',
+      // Мониторинг - ИСПРАВЛЕНО: используем view_monitoring вместо view_edds
+      '/monitoring': 'view_monitoring',
       
       // Графики
       '/mkd-graph': 'view_mkd_heating_periods',
@@ -190,49 +217,20 @@ const NestedMenu: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
     const adminAccess = isAdmin();
     if (adminAccess) {
       console.log("АДМИН: Пользователь является администратором - полный доступ ко всем пунктам меню");
-    }
-
-    for (const item of items) {
-      // Для администраторов пропускаем специальные проверки
-      if (adminAccess) {
-        // Если есть подменю, фильтруем его (для админов тоже нужно обработать подменю)
+      // Для админов возвращаем все пункты меню без проверок (только фильтруем подменю)
+      return Promise.all(items.map(async (item) => {
         let filteredSubmenu: MenuItem[] | undefined;
-        
         if (item.submenu && item.submenu.length > 0) {
           filteredSubmenu = await filterMenuItems(item.submenu);
         }
-        
-        // Добавляем пункт с отфильтрованным подменю
-        console.log(`АДМИН МЕНЮ - Пункт "${item.label}" видим администратору`);
-        result.push({
+        return {
           ...item,
           submenu: filteredSubmenu
-        });
-        continue; // Переходим к следующему пункту
-      }
-      
-      // Специальная проверка для страниц с особыми требованиями
-      if (item.link && keyPagePermissions[item.link]) {
-        const requiredPermission = keyPagePermissions[item.link];
-        console.log(`Особая проверка для страницы ${item.link}, требуется право: ${requiredPermission}`);
-        
-        // Если требуется массив прав, проверяем любое из них
-        let hasSpecialAccess = false;
-        if (Array.isArray(requiredPermission)) {
-          const results = await Promise.all(
-            requiredPermission.map(slug => checkPermissionWithCache(slug))
-          );
-          hasSpecialAccess = results.some(result => result);
-        } else {
-          hasSpecialAccess = await checkPermissionWithCache(requiredPermission);
-        }
-        
-        if (!hasSpecialAccess) {
-          console.log(`СКРЫТ - Пункт меню "${item.label}" скрыт из-за отсутствия специального права`);
-          continue; // Пропускаем этот пункт
-        }
-      }
-      
+        };
+      }));
+    }
+
+    for (const item of items) {
       // Стандартная проверка доступа
       const hasAccess = await checkMenuItemAccess(item);
       
@@ -248,6 +246,29 @@ const NestedMenu: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
           if (filteredSubmenu.length === 0 && item.type !== 'HEADER') {
             console.log(`СКРЫТ - Пункт меню "${item.label}" скрыт: пустое подменю`);
             continue;
+          }
+        }
+        
+        // Специальная проверка для страниц с особыми требованиями
+        // Проводим её только если пользователь не админ (для админов уже проверили выше)
+        if (item.link && keyPagePermissions[item.link] && !adminAccess) {
+          const requiredPermission = keyPagePermissions[item.link];
+          console.log(`Особая проверка для страницы ${item.link}, требуется право: ${requiredPermission}`);
+          
+          // Если требуется массив прав, проверяем любое из них
+          let hasSpecialAccess = false;
+          if (Array.isArray(requiredPermission)) {
+            const results = await Promise.all(
+              requiredPermission.map(slug => checkPermissionWithCache(slug))
+            );
+            hasSpecialAccess = results.some(result => result);
+          } else {
+            hasSpecialAccess = await checkPermissionWithCache(requiredPermission);
+          }
+          
+          if (!hasSpecialAccess) {
+            console.log(`СКРЫТ - Пункт меню "${item.label}" скрыт из-за отсутствия специального права`);
+            continue; // Пропускаем этот пункт
           }
         }
         
@@ -282,10 +303,8 @@ const NestedMenu: React.FC<{ menuItems: MenuItem[] }> = ({ menuItems }) => {
       }
     };
 
-    // Фильтруем меню только когда загружены права или роли пользователя
-    if (Object.keys(userPermissions).length > 0 || userRoles.length > 0) {
-      loadFilteredMenu();
-    }
+    // Фильтруем меню сразу, даже если права еще не загружены (для админов это не критично)
+    loadFilteredMenu();
   }, [menuItems, userPermissions, userRoles]);
 
   // Инициализация открытых меню, находя все родительские элементы текущего пути

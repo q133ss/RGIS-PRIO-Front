@@ -2,7 +2,10 @@ import { HeatSource, ApiHeatSource, AuthResponse } from '../types/heatSource';
 import { HeatingPeriod, HeatingPeriodApiResponse } from '../types/heatingPeriod';
 import { Incident, IncidentType, ResourceType } from '../types/incident';
 import { City, Street, Address } from '../types/incident';
-
+import {
+  MultiApartmentBuilding,
+  ApiMultiApartmentBuildingRequest
+} from '../types/multiApartmentBuilding';
 // Базовый URL для API
 const API_URL = import.meta.env.VITE_API_URL;
 
@@ -445,6 +448,7 @@ function adaptHeatSourceFromApi(apiSource: ApiHeatSource): HeatSource {
 }
 
 // При необходимости можно добавить специальные функции для работы с паспортами
+import { Passport } from '../types/heatSource';
 
 // Получение паспорта теплоисточника (если требуется отдельный запрос)
 export const getHeatSourcePassport = async (id: number): Promise<Passport> => {
@@ -1453,7 +1457,7 @@ export const getAddressesByStreet = async (streetId: number, cityId: number): Pr
     }
     
     // Фильтруем только адреса для указанной улицы
-    return addresses.filter(addr => addr.street_id === streetId);
+    return addresses.filter((addr: { street_id: number }) => addr.street_id === streetId);
   } catch (error) {
     console.error(`Ошибка при получении адресов для улицы с ID ${streetId}:`, error);
     return [];
@@ -1553,7 +1557,8 @@ export const getHeatSupplyMapData = async (params: HeatMapParams = {}): Promise<
 
 
 // Получение данных для карты свободных мощностей
-export const getFreeCapacityMapData = async (params: HeatMapParams = {}): Promise<FreeCapacityArea[]> => {
+// Исправлено: используем FreeCapacityItem[] вместо FreeCapacityArea[]
+export const getFreeCapacityMapData = async (params: HeatMapParams = {}): Promise<FreeCapacityItem[]> => {
   try {
     const queryParams = new URLSearchParams();
 
@@ -2378,12 +2383,12 @@ export const fetchUserCoords = async (): Promise<MapBoundaries | null> => {
   try {
     const response = await api.get<MapBoundaries>('/me'); // Изменено на MapBoundaries вместо MapBoundaries[]
     return {
-      center_lat: parseFloat(response.center_lat),
-      center_lng: parseFloat(response.center_lng),
-      south_west_lat: parseFloat(response.south_west_lat),
-      south_west_lng: parseFloat(response.south_west_lng),
-      north_east_lat: parseFloat(response.north_east_lat),
-      north_east_lng: parseFloat(response.north_east_lng)
+      center_lat: parseFloat(String(response.center_lat)),
+      center_lng: parseFloat(String(response.center_lng)),
+      south_west_lat: parseFloat(String(response.south_west_lat)),
+      south_west_lng: parseFloat(String(response.south_west_lng)),
+      north_east_lat: parseFloat(String(response.north_east_lat)),
+      north_east_lng: parseFloat(String(response.north_east_lng))
     };
   } catch (err) {
     console.error('Ошибка при получении данных пользователя:', err);
@@ -2564,3 +2569,177 @@ export const deleteEddsIncident = async (id: number): Promise<boolean> => {
   }
 };
 
+
+function adaptMultiApartmentBuildingFromApi(apiBuilding: any): MultiApartmentBuilding {
+  if (!apiBuilding) {
+    console.warn("adaptMultiApartmentBuildingFromApi received null or undefined input");
+    return {
+      id: 0,
+      address: 'Data error',
+      settlement: 'Data error',
+      yearBuilt: 'Data error',
+      floors: 'Data error',
+      entrances: 'Data error',
+      apartments: 'Data error',
+      totalArea: 'Data error',
+      managementCompany: 'Data error',
+      technicalCondition: 'Data error'
+    };
+  }
+
+  const id = apiBuilding.id ?? 0;
+
+  let address = 'Not specified';
+  if (apiBuilding.address?.street?.name && apiBuilding.address?.house_number) {
+    address = `${apiBuilding.address.street.name}, ${apiBuilding.address.house_number}`;
+    if (apiBuilding.address.building) {
+      address += `, корп. ${apiBuilding.address.building}`;
+    }
+  }
+
+  const settlement = apiBuilding.address?.street?.city?.name ?? 'Not specified';
+  const yearBuilt = apiBuilding.buildingYear ?? 'Not specified';
+  const entrances = apiBuilding.entrance_count != null ? String(apiBuilding.entrance_count) : 'Not specified';
+
+  const floors = apiBuilding.floors ?? 'Not specified';
+  const apartments = apiBuilding.apartments ?? 'Not specified';
+  const totalArea = apiBuilding.totalArea ?? 'Not specified';
+
+  const managementCompany = apiBuilding.management_org?.shortName ||
+                           apiBuilding.management_org?.fullName ||
+                           'Not specified';
+
+  const technicalCondition = apiBuilding.house_condition?.houseCondition ?? 'Not specified';
+
+  return {
+    id,
+    address,
+    settlement,
+    yearBuilt,
+    floors,
+    entrances,
+    apartments,
+    totalArea,
+    managementCompany,
+    technicalCondition
+  };
+}
+
+// Для создания МКД
+export const createMultiApartmentBuilding = async (building: ApiMultiApartmentBuildingRequest): Promise<MultiApartmentBuilding> => {
+  try {
+    console.log('Creating MKD:', building);
+    const response = await fetchAPI('/mkd', {
+      method: 'POST',
+      body: JSON.stringify(building)
+    });
+
+    console.log('API response when creating MKD:', response);
+    return adaptMultiApartmentBuildingFromApi(response);
+  } catch (error) {
+    console.error('Error creating MKD:', error);
+    throw error;
+  }
+};
+
+// Для получения списка управляющих компаний
+export const getManagementCompanies = async (): Promise<any[]> => {
+  try {
+    try {
+      const companies = await fetchAPI('/org');
+      if (Array.isArray(companies)) return companies;
+      console.warn('API /org did not return an array:', companies);
+    } catch (error) {
+      console.log('Failed to load /org, falling back to extract from MKD data:', error);
+    }
+
+    const allBuildingsResponse = await fetchAPI('/mkd');
+    let buildings: any[] = [];
+    if (Array.isArray(allBuildingsResponse)) {
+        buildings = allBuildingsResponse;
+    } else if (allBuildingsResponse?.data && Array.isArray(allBuildingsResponse.data)) {
+        buildings = allBuildingsResponse.data;
+    }
+
+    const uniqueCompanies = new Map<number, any>();
+    
+    buildings.forEach(building => {
+      if (building?.management_org) {
+        const id = building.management_org.id;
+        if (id && !uniqueCompanies.has(id)) {
+          uniqueCompanies.set(id, {
+            id: id,
+            name: building.management_org.shortName || building.management_org.fullName,
+            shortName: building.management_org.shortName,
+            fullName: building.management_org.fullName
+          });
+        }
+      }
+    });
+    
+    return Array.from(uniqueCompanies.values());
+  } catch (error) {
+    console.error('Error getting management companies:', error);
+    return [];
+  }
+};
+
+// Для получения состояний домов
+export const getTechnicalConditions = async (): Promise<any[]> => {
+  try {
+    console.log('Fetching technical conditions from correct endpoint...');
+    
+    const conditions = await fetchAPI('/house/conditions');
+    console.log('Raw response from /house/conditions:', conditions);
+    
+    let processedConditions = [];
+    
+    if (Array.isArray(conditions)) {
+      processedConditions = conditions;
+    } else if (conditions && Array.isArray(conditions.data)) {
+      processedConditions = conditions.data;
+    } else if (conditions && typeof conditions === 'object') {
+      processedConditions = [conditions];
+    }
+    
+    return processedConditions.map((condition: any) => ({
+      id: condition.id,
+      name: condition.houseCondition || condition.name || `Condition ${condition.id}`,
+      houseCondition: condition.houseCondition || condition.name || `Condition ${condition.id}`,
+      actual: condition.actual,
+      code: condition.code,
+      createDate: condition.createDate,
+      guid: condition.guid,
+      lastUpdateDate: condition.lastUpdateDate,
+      created_at: condition.created_at,
+      updated_at: condition.updated_at
+    }));
+    
+  } catch (error) {
+    console.error('Error fetching technical conditions:', error);
+    
+    try {
+      console.log('Trying fallback method to extract from buildings...');
+      const response = await fetchAPI('/mkd');
+      
+      let buildings = [];
+      if (Array.isArray(response)) {
+        buildings = response;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        buildings = response.data;
+      }
+      
+      const conditionsMap = new Map();
+      buildings.forEach((building: any) => {
+        if (building?.house_condition) {
+          conditionsMap.set(building.house_condition.id, building.house_condition);
+        }
+      });
+      
+      return Array.from(conditionsMap.values());
+    } catch (fallbackError) {
+      console.error('Fallback method also failed:', fallbackError);
+      return [];
+    }
+  }
+};

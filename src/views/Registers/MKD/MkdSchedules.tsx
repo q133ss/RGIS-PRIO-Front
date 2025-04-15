@@ -4,11 +4,18 @@ import { Link } from 'react-router-dom';
 import {
     getMkdBuildings,
     filterMkdBuildings,
-    exportMkdToExcel,
+    // exportMkdToExcel, // removed unused import
     initializeApi,
     getCities,
     getStreets,
-    updateMkdSchedule
+    getAddressesByStreet,
+    updateMkdSchedule,
+    createMultiApartmentBuilding,
+    getManagementCompanies,
+    getTechnicalConditions,
+    requestExport,
+    checkExportStatus,
+    downloadExport
 } from '../../../services/api';
 import { MkdBuilding, MkdScheduleState, MkdQueryParams, City } from '../../../types/mkdSchedule';
 import DatePicker from 'react-datepicker';
@@ -37,6 +44,19 @@ interface EditableSchedule {
     actual_connection_date: Date | null;
     disconnection_order: string;
     connection_order: string;
+}
+
+interface NewBuildingData {
+    entrance_count?: number | null;
+    address_id: number | null;
+    buildingYear: string;
+    cadastreNumber: string;
+    house_condition_id: number | null;
+    house_type_id: number | null;
+    management_org_id: number | null;
+    municipality_org_id: number | null;
+    planSeries?: string;
+    status?: string;
 }
 
 const MkdSchedules: React.FC = () => {
@@ -86,6 +106,35 @@ const MkdSchedules: React.FC = () => {
     const [isEditing, setIsEditing] = useState(false);
     const [editSuccessMessage, setEditSuccessMessage] = useState('');
     const [editingErrors, setEditingErrors] = useState<{[key: string]: string}>({});
+
+    // Building creation state
+    const [showCreateModal, setShowCreateModal] = useState(false);
+    const [newBuilding, setNewBuilding] = useState<NewBuildingData>({
+        entrance_count: null,
+        address_id: null,
+        buildingYear: '',
+        cadastreNumber: '',
+        house_condition_id: null,
+        house_type_id: null,
+        management_org_id: null,
+        municipality_org_id: null,
+        planSeries: 'Индивидуальный',
+        status: 'APPROVED'
+    });
+    const [isCreating, setIsCreating] = useState(false);
+    const [createSuccessMessage, setCreateSuccessMessage] = useState('');
+    const [createErrors, setCreateErrors] = useState<{[key: string]: string}>({});
+    const [managementCompanies, setManagementCompanies] = useState<{id: number, name: string}[]>([]);
+    const [houseConditions, setHouseConditions] = useState<{id: number, name: string}[]>([]);
+    const [houseTypes] = useState<{id: number, name: string}[]>([
+        { id: 1, name: 'Многоквартирный' }
+    ]);
+
+    // Export state
+    const [exportLoading, setExportLoading] = useState(false);
+    const [exportStatus, setExportStatus] = useState('');
+    const [, setExportId] = useState('');
+    const exportCheckInterval = useRef<NodeJS.Timeout | null>(null);
 
     const [columns, setColumns] = useState<TableColumn[]>([
         { id: 'id', title: '№', width: 70, visible: true, field: 'id' },
@@ -475,6 +524,30 @@ const MkdSchedules: React.FC = () => {
         }
     };
 
+    const loadManagementCompanies = async () => {
+        try {
+            const companies = await getManagementCompanies();
+            setManagementCompanies(companies.map(company => ({
+                id: company.id,
+                name: company.name || company.shortName || company.fullName
+            })));
+        } catch (error) {
+            console.error('Ошибка при загрузке списка управляющих компаний:', error);
+        }
+    };
+
+    const loadHouseConditions = async () => {
+        try {
+            const conditions = await getTechnicalConditions();
+            setHouseConditions(conditions.map(condition => ({
+                id: condition.id,
+                name: condition.houseCondition || condition.name
+            })));
+        } catch (error) {
+            console.error('Ошибка при загрузке списка состояний домов:', error);
+        }
+    };
+
     const handleCityChange = (cityId: string) => {
         const selectedCity = filterOptions.cities.find(c => c.id.toString() === cityId);
         const cityName = selectedCity ? selectedCity.name : '';
@@ -499,19 +572,56 @@ const MkdSchedules: React.FC = () => {
         }
     };
 
+    // Load addresses based on selected street
+    const loadAddressesByStreet = async (streetId: number, cityId: number) => {
+        try {
+            const addresses = await getAddressesByStreet(streetId, cityId);
+            setFilterOptions(prev => ({
+                ...prev,
+                addresses: addresses.map(addr => ({
+                    id: addr.id,
+                    name: (addr.street?.name || '') + ', ' + addr.house_number + (addr.building ? '/' + addr.building : '')
+                }))
+            }));
+            console.log('Loaded addresses:', addresses);
+        } catch (error) {
+            console.error('Error loading addresses:', error);
+        }
+    };
+
     const handleStreetChange = (streetId: string) => {
+        const parsedStreetId = streetId ? parseInt(streetId) : null;
         setActiveFilters(prev => ({
           ...prev,
-          streetId: streetId ? parseInt(streetId) : null,
+          streetId: parsedStreetId,
           address: '',
           addressId: null
         }));
+
+        // Load addresses when a street is selected
+        if (parsedStreetId && activeFilters.cityId) {
+            loadAddressesByStreet(parsedStreetId, activeFilters.cityId);
+        } else {
+            // Clear addresses if no street selected
+            setFilterOptions(prev => ({
+                ...prev,
+                addresses: []
+            }));
+        }
     };
 
     const handleAddressChange = (addressId: string) => {
+        const parsedAddressId = addressId ? parseInt(addressId) : null;
+        // Find the selected address name from the options
+        const selectedAddress = parsedAddressId 
+            ? filterOptions.addresses.find(addr => addr.id === parsedAddressId) 
+            : null;
+        
         setActiveFilters(prev => ({
             ...prev,
-            addressId: addressId ? parseInt(addressId) : null
+            addressId: parsedAddressId,
+            // Update the address display name
+            address: selectedAddress ? selectedAddress.name : ''
         }));
     };
 
@@ -589,37 +699,118 @@ const MkdSchedules: React.FC = () => {
 
     const handleExportToExcel = async () => {
         try {
-            setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
+            setExportLoading(true);
+            setExportStatus('Запрос экспорта...');
 
-            const now = new Date();
-            const dateStr = `${now.getDate()}-${now.getMonth() + 1}-${now.getFullYear()}`;
-            const timeStr = `${now.getHours()}-${now.getMinutes()}`;
+            // Use the new export API
+            const response = await requestExport('xlsx');
+            setExportId(response.export_id);
+            setExportStatus('Подготовка файла...');
 
-            const blob = await exportMkdToExcel(state.mkdBuildings);
+            // Start checking status
+            if (exportCheckInterval.current) {
+                clearInterval(exportCheckInterval.current);
+            }
 
-            const url = window.URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `Графики_включения_отключения_МКД_${dateStr}_${timeStr}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            window.URL.revokeObjectURL(url);
-            document.body.removeChild(a);
-
-            setState(prev => ({
-                ...prev,
-                loading: false,
-                success: 'success',
-                error: null
-            }));
+            exportCheckInterval.current = setInterval(async () => {
+                try {
+                    const status = await checkExportStatus(response.export_id);
+                    
+                    if (status.status === 'completed' && status.download_url) {
+                        clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                        exportCheckInterval.current = null;
+                        
+                        setExportStatus('Скачивание...');
+                        const blob = await downloadExport(response.export_id);
+                        
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `Графики_включения_отключения_МКД.xlsx`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        setExportLoading(false);
+                        setExportStatus('');
+                    } else if (status.status === 'failed') {
+                        clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                        exportCheckInterval.current = null;
+                        throw new Error('Экспорт не удался');
+                    }
+                } catch (error) {
+                    clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                    exportCheckInterval.current = null;
+                    throw error;
+                }
+            }, 2000);
         } catch (error) {
-            setApiRetryCount(prev => prev + 1);
-
+            setExportLoading(false);
+            setExportStatus('');
             setState(prev => ({
                 ...prev,
                 error: `Не удалось экспортировать данные. Пожалуйста, попробуйте позже.`,
-                loading: false,
-                success: ''
+                loading: false
+            }));
+        }
+    };
+
+    const handleExportToCsv = async () => {
+        try {
+            setExportLoading(true);
+            setExportStatus('Запрос экспорта...');
+
+            // Use the new export API
+            const response = await requestExport('csv');
+            setExportId(response.export_id);
+            setExportStatus('Подготовка файла...');
+
+            // Start checking status
+            if (exportCheckInterval.current) {
+                clearInterval(exportCheckInterval.current);
+            }
+
+            exportCheckInterval.current = setInterval(async () => {
+                try {
+                    const status = await checkExportStatus(response.export_id);
+                    
+                    if (status.status === 'completed' && status.download_url) {
+                        clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                        exportCheckInterval.current = null;
+                        
+                        setExportStatus('Скачивание...');
+                        const blob = await downloadExport(response.export_id);
+                        
+                        const url = window.URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `Графики_включения_отключения_МКД.csv`;
+                        document.body.appendChild(a);
+                        a.click();
+                        window.URL.revokeObjectURL(url);
+                        document.body.removeChild(a);
+                        
+                        setExportLoading(false);
+                        setExportStatus('');
+                    } else if (status.status === 'failed') {
+                        clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                        exportCheckInterval.current = null;
+                        throw new Error('Экспорт не удался');
+                    }
+                } catch (error) {
+                    clearInterval(exportCheckInterval.current as NodeJS.Timeout);
+                    exportCheckInterval.current = null;
+                    throw error;
+                }
+            }, 2000);
+        } catch (error) {
+            setExportLoading(false);
+            setExportStatus('');
+            setState(prev => ({
+                ...prev,
+                error: `Не удалось экспортировать данные. Пожалуйста, попробуйте позже.`,
+                loading: false
             }));
         }
     };
@@ -768,6 +959,146 @@ const MkdSchedules: React.FC = () => {
         setEditSuccessMessage('');
     };
 
+    // Handle showing the create modal
+    const handleShowCreateModal = () => {
+        setNewBuilding({
+            entrance_count: null,
+            address_id: null,
+            buildingYear: '',
+            cadastreNumber: '',
+            house_condition_id: null,
+            house_type_id: 1, // Default to Многоквартирный
+            management_org_id: null,
+            municipality_org_id: null,
+            planSeries: 'Индивидуальный',
+            status: 'APPROVED'
+        });
+        
+        setCreateErrors({});
+        setCreateSuccessMessage('');
+        setShowCreateModal(true);
+        
+        // Load required data for dropdowns
+        loadManagementCompanies();
+        loadHouseConditions();
+    };
+
+    // Handle creating a new building
+    const handleCreateBuilding = async () => {
+        try {
+            setIsCreating(true);
+            setCreateErrors({});
+            
+            // Validate form
+            const errors: {[key: string]: string} = {};
+            
+            if (!newBuilding.address_id) {
+                errors.address_id = 'Адрес обязателен для заполнения';
+            }
+            
+            if (!newBuilding.cadastreNumber) {
+                errors.cadastreNumber = 'Кадастровый номер обязателен для заполнения';
+            }
+            
+            if (!newBuilding.buildingYear) {
+                errors.buildingYear = 'Год постройки обязателен для заполнения';
+            }
+            
+            if (!newBuilding.house_type_id) {
+                errors.house_type_id = 'Тип дома обязателен для заполнения';
+            }
+            
+            if (!newBuilding.house_condition_id) {
+                errors.house_condition_id = 'Состояние дома обязательно для заполнения';
+            }
+            
+            if (!newBuilding.management_org_id) {
+                errors.management_org_id = 'Управляющая организация обязательна для заполнения';
+            }
+            
+            if (!newBuilding.municipality_org_id) {
+                errors.municipality_org_id = 'Муниципальная организация обязательна для заполнения';
+            }
+            
+            if (Object.keys(errors).length > 0) {
+                setCreateErrors(errors);
+                setIsCreating(false);
+                return;
+            }
+            
+            // Create building
+            // Ensure address_id is not null before sending
+            if (newBuilding.address_id === null) {
+                setCreateErrors({ address_id: 'Адрес обязателен для заполнения' });
+                setIsCreating(false);
+                return;
+            }
+            // TypeScript: address_id is now guaranteed to be number
+            // Ensure all required fields are non-null before API call
+            if (!newBuilding.house_condition_id || !newBuilding.house_type_id || 
+                !newBuilding.management_org_id || !newBuilding.municipality_org_id) {
+                setCreateErrors({
+                    ...createErrors,
+                    general: 'Все обязательные поля должны быть заполнены'
+                });
+                setIsCreating(false);
+                return;
+            }
+            
+            await createMultiApartmentBuilding({
+                address_id: newBuilding.address_id as number,
+                buildingYear: newBuilding.buildingYear,
+                cadastreNumber: newBuilding.cadastreNumber,
+                house_condition_id: newBuilding.house_condition_id,
+                house_type_id: newBuilding.house_type_id,
+                management_org_id: newBuilding.management_org_id,
+                municipality_org_id: newBuilding.municipality_org_id,
+                planSeries: newBuilding.planSeries,
+                status: newBuilding.status,
+                entrance_count: newBuilding.entrance_count
+            });
+            
+            setCreateSuccessMessage('МКД успешно создан');
+            setTimeout(() => {
+                setShowCreateModal(false);
+                setCreateSuccessMessage('');
+                loadMkdBuildings(); // Refresh the data
+            }, 1500);
+            
+        } catch (error: any) {
+            console.error('Error creating building:', error);
+            
+            // Handle validation errors from API
+            if (error.errors) {
+                setCreateErrors(error.errors);
+            } else {
+                setCreateErrors({
+                    general: error.message || 'Ошибка при создании МКД. Пожалуйста, попробуйте снова.'
+                });
+            }
+        } finally {
+            setIsCreating(false);
+        }
+    };
+
+    const handleCancelCreate = () => {
+        setShowCreateModal(false);
+        setNewBuilding({
+            entrance_count: null,
+            address_id: null,
+            buildingYear: '',
+            cadastreNumber: '',
+            house_condition_id: null,
+            house_type_id: 1,
+            management_org_id: null,
+            municipality_org_id: null,
+            planSeries: 'Индивидуальный',
+            status: 'APPROVED'
+        });
+        setCreateErrors({});
+        setCreateSuccessMessage('');
+    };
+
     useEffect(() => {
         const initialize = async () => {
             try {
@@ -806,6 +1137,11 @@ const MkdSchedules: React.FC = () => {
         return () => {
             document.body.style.cursor = '';
             document.body.classList.remove('resizing');
+            
+            // Clear export check interval on unmount
+            if (exportCheckInterval.current) {
+                clearInterval(exportCheckInterval.current);
+            }
         };
     }, []);
 
@@ -1091,6 +1427,14 @@ const MkdSchedules: React.FC = () => {
                                 <Col md="auto">
                                     <div className="d-flex gap-2 align-items-end mb-2">
                                         <Button
+                                            variant="success"
+                                            onClick={handleShowCreateModal}
+                                            disabled={state.loading || authError}
+                                        >
+                                            <i className="ti ti-plus me-1"></i>
+                                            Создать МКД
+                                        </Button>
+                                        <Button
                                             variant="light-secondary"
                                             onClick={() => setShowColumnsSettings(true)}
                                             title="Настройки таблицы"
@@ -1098,14 +1442,57 @@ const MkdSchedules: React.FC = () => {
                                             <i className="ti ti-table-options me-1"></i>
                                             Настройки
                                         </Button>
-                                        <Button
-                                            variant="secondary"
-                                            onClick={handleExportToExcel}
-                                            disabled={state.loading || authError}
-                                        >
-                                            <i className="ph-duotone ph-file-excel me-1"></i>
-                                            ЭКСПОРТ
-                                        </Button>
+                                        <div className="dropdown">
+                                            <Button
+                                                variant="secondary"
+                                                className="dropdown-toggle"
+                                                disabled={state.loading || authError || exportLoading}
+                                                id="export-dropdown"
+                                                data-bs-toggle="dropdown"
+                                                aria-expanded="false"
+                                            >
+                                                {exportLoading ? (
+                                                    <>
+                                                        <Spinner
+                                                            as="span"
+                                                            animation="border"
+                                                            size="sm"
+                                                            role="status"
+                                                            aria-hidden="true"
+                                                            className="me-1"
+                                                        />
+                                                        {exportStatus}
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        <i className="ph-duotone ph-file-export me-1"></i>
+                                                        ЭКСПОРТ
+                                                    </>
+                                                )}
+                                            </Button>
+                                            <ul className="dropdown-menu" aria-labelledby="export-dropdown">
+                                                <li>
+                                                    <button 
+                                                        className="dropdown-item" 
+                                                        onClick={handleExportToExcel}
+                                                        disabled={exportLoading}
+                                                    >
+                                                        <i className="ph-duotone ph-file-excel me-1"></i>
+                                                        Excel (.xlsx)
+                                                    </button>
+                                                </li>
+                                                <li>
+                                                    <button 
+                                                        className="dropdown-item" 
+                                                        onClick={handleExportToCsv}
+                                                        disabled={exportLoading}
+                                                    >
+                                                        <i className="ph-duotone ph-file-csv me-1"></i>
+                                                        CSV
+                                                    </button>
+                                                </li>
+                                            </ul>
+                                        </div>
                                     </div>
                                 </Col>
                             </Row>
@@ -1417,6 +1804,264 @@ const MkdSchedules: React.FC = () => {
                                 Сохранение...
                             </>
                         ) : 'Сохранить'}
+                    </Button>
+                </Modal.Footer>
+            </Modal>
+
+            {/* Create Building Modal */}
+            <Modal 
+                show={showCreateModal} 
+                onHide={handleCancelCreate}
+                backdrop="static"
+                size="lg"
+            >
+                <Modal.Header closeButton>
+                    <Modal.Title>Создание нового МКД</Modal.Title>
+                </Modal.Header>
+                <Modal.Body>
+                    {createSuccessMessage ? (
+                        <Alert variant="success">
+                            {createSuccessMessage}
+                        </Alert>
+                    ) : (
+                        <>
+                            {createErrors.general && (
+                                <Alert variant="danger">
+                                    {createErrors.general}
+                                </Alert>
+                            )}
+                            
+                            <Form>
+                                <Row className="mb-3">
+                                    <Col md={6}>
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Город *</Form.Label>
+                                            <Form.Select
+                                                value={activeFilters.cityId?.toString() || ''}
+                                                onChange={(e) => handleCityChange(e.target.value)}
+                                                isInvalid={!!createErrors.address_id}
+                                            >
+                                                <option value="">Выберите город</option>
+                                                {filterOptions.cities.map(city => (
+                                                    <option key={city.id} value={city.id}>
+                                                        {city.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Улица *</Form.Label>
+                                            <Form.Select
+                                                value={activeFilters.streetId?.toString() || ''}
+                                                onChange={(e) => handleStreetChange(e.target.value)}
+                                                disabled={!activeFilters.cityId}
+                                                isInvalid={!!createErrors.address_id}
+                                            >
+                                                <option value="">Выберите улицу</option>
+                                                {filterOptions.streets.map(street => (
+                                                    <option key={street.id} value={street.id}>
+                                                        {street.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Адрес *</Form.Label>
+                                            <Form.Select
+                                                value={activeFilters.addressId?.toString() || ''}
+                                                onChange={(e) => {
+                                                    handleAddressChange(e.target.value);
+                                                    setNewBuilding(prev => ({
+                                                        ...prev,
+                                                        address_id: e.target.value ? parseInt(e.target.value) : null
+                                                    }));
+                                                }}
+                                                disabled={!activeFilters.streetId}
+                                                isInvalid={!!createErrors.address_id}
+                                            >
+                                                <option value="">Выберите адрес</option>
+                                                {filterOptions.addresses.map(address => (
+                                                    <option key={address.id} value={address.id}>
+                                                        {address.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                            {createErrors.address_id && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.address_id}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Год постройки *</Form.Label>
+                                            <Form.Control
+                                                type="text"
+                                                placeholder="Введите год постройки"
+                                                value={newBuilding.buildingYear}
+                                                onChange={(e) => setNewBuilding(prev => ({ ...prev, buildingYear: e.target.value }))}
+                                                isInvalid={!!createErrors.buildingYear}
+                                            />
+                                            {createErrors.buildingYear && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.buildingYear}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Кадастровый номер *</Form.Label>
+                                            <Form.Control
+                                                type="text"
+                                                placeholder="Введите кадастровый номер"
+                                                value={newBuilding.cadastreNumber}
+                                                onChange={(e) => setNewBuilding(prev => ({ ...prev, cadastreNumber: e.target.value }))}
+                                                isInvalid={!!createErrors.cadastreNumber}
+                                            />
+                                            {createErrors.cadastreNumber && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.cadastreNumber}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+                                    </Col>
+
+                                    <Col md={6}>
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Тип дома *</Form.Label>
+                                            <Form.Select
+                                                value={newBuilding.house_type_id?.toString() || ''}
+                                                onChange={(e) => setNewBuilding(prev => ({ 
+                                                    ...prev, 
+                                                    house_type_id: e.target.value ? parseInt(e.target.value) : null 
+                                                }))}
+                                                isInvalid={!!createErrors.house_type_id}
+                                            >
+                                                <option value="">Выберите тип дома</option>
+                                                {houseTypes.map(type => (
+                                                    <option key={type.id} value={type.id}>
+                                                        {type.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                            {createErrors.house_type_id && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.house_type_id}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Состояние дома *</Form.Label>
+                                            <Form.Select
+                                                value={newBuilding.house_condition_id?.toString() || ''}
+                                                onChange={(e) => setNewBuilding(prev => ({ 
+                                                    ...prev, 
+                                                    house_condition_id: e.target.value ? parseInt(e.target.value) : null 
+                                                }))}
+                                                isInvalid={!!createErrors.house_condition_id}
+                                            >
+                                                <option value="">Выберите состояние</option>
+                                                {houseConditions.map(condition => (
+                                                    <option key={condition.id} value={condition.id}>
+                                                        {condition.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                            {createErrors.house_condition_id && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.house_condition_id}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Управляющая компания *</Form.Label>
+                                            <Form.Select
+                                                value={newBuilding.management_org_id?.toString() || ''}
+                                                onChange={(e) => {
+                                                    const value = e.target.value ? parseInt(e.target.value) : null;
+                                                    setNewBuilding(prev => ({ 
+                                                        ...prev, 
+                                                        management_org_id: value,
+                                                        municipality_org_id: value // Set both to the same value
+                                                    }));
+                                                }}
+                                                isInvalid={!!createErrors.management_org_id}
+                                            >
+                                                <option value="">Выберите УК</option>
+                                                {managementCompanies.map(company => (
+                                                    <option key={company.id} value={company.id}>
+                                                        {company.name}
+                                                    </option>
+                                                ))}
+                                            </Form.Select>
+                                            {createErrors.management_org_id && (
+                                                <Form.Control.Feedback type="invalid">
+                                                    {createErrors.management_org_id}
+                                                </Form.Control.Feedback>
+                                            )}
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Количество подъездов</Form.Label>
+                                            <Form.Control
+                                                type="number"
+                                                placeholder="Введите количество подъездов"
+                                                value={newBuilding.entrance_count || ''}
+                                                onChange={(e) => setNewBuilding(prev => ({ 
+                                                    ...prev, 
+                                                    entrance_count: e.target.value ? parseInt(e.target.value) : null 
+                                                }))}
+                                            />
+                                        </Form.Group>
+
+                                        <Form.Group className="mb-3">
+                                            <Form.Label>Серия проекта</Form.Label>
+                                            <Form.Control
+                                                type="text"
+                                                placeholder="Введите серию проекта"
+                                                value={newBuilding.planSeries || ''}
+                                                onChange={(e) => setNewBuilding(prev => ({ ...prev, planSeries: e.target.value }))}
+                                            />
+                                        </Form.Group>
+                                    </Col>
+                                </Row>
+                                <div className="text-muted small mb-3">
+                                    * - поля, обязательные для заполнения
+                                </div>
+                            </Form>
+                        </>
+                    )}
+                </Modal.Body>
+                <Modal.Footer>
+                    <Button 
+                        variant="secondary" 
+                        onClick={handleCancelCreate}
+                        disabled={isCreating}
+                    >
+                        Отмена
+                    </Button>
+                    <Button 
+                        variant="success" 
+                        onClick={handleCreateBuilding}
+                        disabled={isCreating || !!createSuccessMessage}
+                    >
+                        {isCreating ? (
+                            <>
+                                <Spinner
+                                    as="span"
+                                    animation="border"
+                                    size="sm"
+                                    role="status"
+                                    aria-hidden="true"
+                                    className="me-2"
+                                />
+                                Создание...
+                            </>
+                        ) : 'Создать МКД'}
                     </Button>
                 </Modal.Footer>
             </Modal>

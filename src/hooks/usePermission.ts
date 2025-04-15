@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { checkPermissionWithCache } from '../services/permissionsService';
+import { checkPermissionWithCache, isAdmin } from '../services/permissionsService';
 
 /**
  * Хук для проверки разрешений с отслеживанием состояния загрузки
@@ -14,6 +14,12 @@ const usePermission = (permissionSlug: string | string[] | null) => {
     const checkAccess = async () => {
       try {
         setLoading(true);
+        
+        // Если пользователь администратор, доступ разрешен всегда
+        if (isAdmin()) {
+          setHasAccess(true);
+          return;
+        }
         
         // Если permissionSlug равен null, считаем что доступ разрешен
         if (permissionSlug === null) {
@@ -56,52 +62,21 @@ const usePermission = (permissionSlug: string | string[] | null) => {
 
 /**
  * Хук для проверки доступа администратора
- * @returns Объект с флагами isAdmin и loading
+ * @returns Объект с флагами isAdminUser и loading
  */
 export const useAdminAccess = () => {
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdminUser, setIsAdminUser] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const checkAdminAccess = async () => {
+    const checkAdminAccess = () => {
       try {
         setLoading(true);
-        
-        // Проверяем наличие административных прав
-        const userStr = localStorage.getItem('user');
-        if (!userStr) {
-          setIsAdmin(false);
-          return;
-        }
-        
-        try {
-          const user = JSON.parse(userStr);
-          let userRoles: string[] = [];
-          
-          // Обработка разных форматов ролей в пользователе
-          if (Array.isArray(user.roles)) {
-            userRoles = user.roles.map((role: any) => 
-              typeof role === 'string' ? role : (role.slug || role.name)
-            );
-          } else if (user.role) {
-            userRoles = [typeof user.role === 'string' ? 
-              user.role : (user.role.slug || user.role.name)];
-          }
-          
-          // Проверяем, является ли пользователь администратором
-          const hasAdminRole = userRoles.some(role => 
-            role === 'admin' || role === 'super_admin' || role.includes('admin')
-          );
-          
-          setIsAdmin(hasAdminRole);
-          
-        } catch (e) {
-          console.error('Ошибка при проверке ролей администратора:', e);
-          setIsAdmin(false);
-        }
+        const adminStatus = isAdmin();
+        setIsAdminUser(adminStatus);
       } catch (error) {
         console.error('Ошибка при проверке административного доступа:', error);
-        setIsAdmin(false);
+        setIsAdminUser(false);
       } finally {
         setLoading(false);
       }
@@ -110,7 +85,7 @@ export const useAdminAccess = () => {
     checkAdminAccess();
   }, []);
 
-  return { isAdmin, loading };
+  return { isAdmin: isAdminUser, loading };
 };
 
 export default usePermission;
