@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Modal, Button, Form, Spinner, Row, Col, Badge } from 'react-bootstrap';
 import { EddsIncident, searchAddresses } from '../../../services/api';
+import { Address } from '../../../types/incident';
 
 interface EddsDetailModalProps {
   show: boolean;
