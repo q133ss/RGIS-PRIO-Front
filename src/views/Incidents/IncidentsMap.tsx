@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Modal, Button, Spinner, Form, ButtonGroup, Toast, ToastContainer } from 'react-bootstrap';
+import { Card, Row, Col, Modal, Button, Spinner, Form, Toast, ToastContainer } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   initializeApi,
@@ -13,6 +13,24 @@ import {
   fetchUserCoords
 } from '../../services/api';
 import { Incident, Address, IncidentStatus, ResourceType, IncidentType, City, HeatSource } from '../../types/incident'; // Removed 'Street'
+
+// Define the MapBoundaries interface
+interface MapBoundaries {
+  // Standard boundary coordinates
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+  // Center coordinates
+  center_lat: number;
+  center_lng: number;
+  // Southwest corner coordinates
+  south_west_lat: number;
+  south_west_lng: number;
+  // Northeast corner coordinates
+  north_east_lat: number;
+  north_east_lng: number;
+}
 
 declare global {
   interface Window {
@@ -87,7 +105,7 @@ const IncidentsMap: React.FC = () => {
   const mapRef = useRef<HTMLDivElement>(null);
   const mapInstanceRef = useRef<any>(null);
 
-  const [viewLevel, setViewLevel] = useState<'region' | 'city' | 'district'>('city');
+  // Removed unused viewLevel state
 
   const [filters, setFilters] = useState<FilterState>({
     startDate: '',
@@ -142,10 +160,18 @@ const IncidentsMap: React.FC = () => {
         const userProfile = await fetchUserCoords();
         if (userProfile) {
           setMapBoundaries({
+            // Standard boundary coordinates
+            north: userProfile.north_east_lat,
+            south: userProfile.south_west_lat,
+            east: userProfile.north_east_lng,
+            west: userProfile.south_west_lng,
+            // Center coordinates
             center_lat: userProfile.center_lat,
             center_lng: userProfile.center_lng,
+            // Southwest corner coordinates
             south_west_lat: userProfile.south_west_lat,
             south_west_lng: userProfile.south_west_lng,
+            // Northeast corner coordinates
             north_east_lat: userProfile.north_east_lat,
             north_east_lng: userProfile.north_east_lng
           });
@@ -1052,23 +1078,7 @@ const IncidentsMap: React.FC = () => {
     return date.toLocaleString('ru-RU');
   };
 
-  const changeViewLevel = (level: 'region' | 'city' | 'district'): void => {
-    setViewLevel(level);
-
-    if (!mapInstanceRef.current) return;
-
-    switch (level) {
-      case 'region':
-        mapInstanceRef.current.setZoom(8);
-        break;
-      case 'city':
-        mapInstanceRef.current.setZoom(12);
-        break;
-      case 'district':
-        mapInstanceRef.current.setZoom(15);
-        break;
-    }
-  };
+  // Removed unused changeViewLevel function
 
   const toggleFilter = (): void => {
     setIsFilterExpanded(!isFilterExpanded);
