@@ -2525,7 +2525,7 @@ const HeatSources: React.FC = () => {
                                                 aria-hidden="true"
                                                 className="me-2"
                                             />
-                                            Сохранение...
+                                            Сохранение....
                                         </>
                                     ) : (
                                         <>
