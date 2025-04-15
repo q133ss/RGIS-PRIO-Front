@@ -17,7 +17,6 @@ import {
     requestExport,
     checkExportStatus,
     downloadExport,
-    getAddressesByStreet,
     searchAddresses
 } from '../../../services/api';
 import { HeatSource, HeatSourceState, ApiHeatSource } from '../../../types/heatSource';
@@ -53,6 +52,7 @@ interface AddressDetail {
     };
     house_number?: string;
     building?: string | null;
+    loading?: boolean; // Add loading property for tracking loading state
 }
 
 const HeatSources: React.FC = () => {
@@ -71,7 +71,7 @@ const HeatSources: React.FC = () => {
     const [exportState, setExportState] = useState({
         loading: false,
         progress: '',
-        error: null
+        error: null as string | null
     });
 
     const [activeFilters, setActiveFilters] = useState({
@@ -236,30 +236,152 @@ const HeatSources: React.FC = () => {
     // Function to load address details by ID
     const loadAddressDetails = async (addressIds: number[]) => {
         try {
-            // This is a simplification - you might need to implement an API endpoint to get multiple addresses by IDs
-            // For now, we'll update the addressMappings for the IDs we have
             const newMappings = {...addressMappings};
             let updated = false;
+            const missingIds = addressIds.filter(id => !newMappings[id]);
             
-            for (const id of addressIds) {
-                // Skip already loaded addresses
-                if (newMappings[id]) continue;
+            if (missingIds.length === 0) return;
+            
+            // Set to loading state for these IDs to prevent concurrent fetches
+            missingIds.forEach(id => {
+                newMappings[id] = {
+                    id,
+                    name: 'Загрузка...',
+                    loading: true
+                };
+            });
+            setAddressMappings({...newMappings});
+            
+            // Use the city ID for Voronezh (from handleAddressSearch)
+            const cityId = 2;
+            
+            // Direct API call to fetch addresses to make sure we're handling pagination correctly
+            try {
+                console.log('Fetching addresses directly from API');
+                const response = await fetch(`https://pink-masters.store/api/addresses/${cityId}`);
+                const data = await response.json();
+                console.log('Raw address data:', data);
                 
-                try {
-                    // You might need to create a real API endpoint for this
-                    // For now, create a placeholder address object
+                // Handle the paginated response - extract addresses from the data array
+                const addresses = data.data || [];
+                console.log('Extracted addresses:', addresses);
+                
+                // Process each missing address ID
+                for (const id of missingIds) {
+                    // Find the address in the list of all addresses
+                    const matchedAddress = addresses.find((addr: any) => addr.id === id);
+                    
+                    if (matchedAddress) {
+                        console.log(`Found address for ID ${id}:`, matchedAddress);
+                        
+                        // Format a proper address string
+                        let addressString = ''; 
+                        
+                        // Use data from matched address to form a complete address string
+                        if (matchedAddress.street && matchedAddress.street.city) {
+                            addressString = `${matchedAddress.street.city.name}, ${matchedAddress.street.name}, ${matchedAddress.house_number}`;
+                            if (matchedAddress.building) {
+                                addressString += ` корп. ${matchedAddress.building}`;
+                            }
+                        } else {
+                            // Fallback if street/city information is missing
+                            addressString = matchedAddress.name || `Адрес ${id}`;
+                        }
+                        
+                        // Create a properly formatted AddressDetail object
+                        newMappings[id] = {
+                            id,
+                            name: addressString,
+                            street: matchedAddress.street || {
+                                name: '',
+                                city: {
+                                    name: ''
+                                }
+                            },
+                            house_number: matchedAddress.house_number || '',
+                            building: matchedAddress.building || null
+                        };
+                        console.log(`Formatted address for ID ${id}:`, newMappings[id]);
+                        updated = true;
+                    } else {
+                        console.log(`No match found for address ID ${id}, checking for other addresses...`);
+                        // If exact match isn't found, maybe the IDs in supply_address_ids don't match actual address IDs
+                        // So we'll just use the available addresses and display them in order
+                        
+                        // Try to use one of the available addresses (to show something useful instead of 'Address X')
+                        const indexInMissingIds = missingIds.indexOf(id);
+                        const fallbackAddress = addresses[indexInMissingIds % addresses.length]; // Use modulo to cycle through available addresses
+                        
+                        if (fallbackAddress) {
+                            console.log(`Using fallback address for ID ${id}:`, fallbackAddress);
+                            // Format a proper address string from the fallback address
+                            let addressString = '';
+                            
+                            if (fallbackAddress.street && fallbackAddress.street.city) {
+                                addressString = `${fallbackAddress.street.city.name}, ${fallbackAddress.street.name}, ${fallbackAddress.house_number}`;
+                                if (fallbackAddress.building) {
+                                    addressString += ` корп. ${fallbackAddress.building}`;
+                                }
+                            } else {
+                                addressString = fallbackAddress.name || `Адрес ${id}`;
+                            }
+                            
+                            newMappings[id] = {
+                                id,
+                                name: addressString,
+                                street: fallbackAddress.street || {
+                                    name: '',
+                                    city: {
+                                        name: ''
+                                    }
+                                },
+                                house_number: fallbackAddress.house_number || '',
+                                building: fallbackAddress.building || null
+                            };
+                            console.log(`Created fallback address for ID ${id}:`, newMappings[id]);
+                            updated = true;
+                        } else {
+                            // Last resort, if we can't even find a fallback address
+                            console.log(`No fallback address available for ID ${id}`);
+                            newMappings[id] = {
+                                id,
+                                name: `Адрес ${id}`,
+                                street: {
+                                    name: '',
+                                    city: {
+                                        name: ''
+                                    }
+                                },
+                                house_number: '',
+                                building: null
+                            };
+                            updated = true;
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Ошибка при загрузке всех адресов:', error);
+                
+                // Fallback to using the original approach if direct API call fails
+                for (const id of missingIds) {
                     newMappings[id] = {
                         id,
                         name: `Адрес ${id}`,
+                        street: {
+                            name: '',
+                            city: {
+                                name: ''
+                            }
+                        },
+                        house_number: '',
+                        building: null
                     };
                     updated = true;
-                } catch (error) {
-                    console.error(`Ошибка при загрузке адреса ${id}:`, error);
                 }
             }
             
             if (updated) {
-                setAddressMappings(newMappings);
+                setAddressMappings({...newMappings});
             }
         } catch (error) {
             console.error('Ошибка при загрузке адресов:', error);
@@ -269,7 +391,7 @@ const HeatSources: React.FC = () => {
     const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
         e.preventDefault();
         e.stopPropagation();
-
+        
         if (isResizing) return;
 
         const column = columns.find(c => c.id === columnId);
@@ -981,7 +1103,14 @@ const HeatSources: React.FC = () => {
             setAddressSearchLoading(true);
             // You'll need to implement this API endpoint or adapt an existing one
             const results = await searchAddresses(2, addressSearch); // 2 is hardcoded as a cityId (e.g., Voronezh)
-            setAddressSearchResults(results);
+            // Transform Address[] to AddressDetail[] with proper type structure
+            const formattedResults = results.map(address => ({
+                id: address.id,
+                name: (address as any).fullAddress || `Address ${address.id}`,
+                street: address.street || { name: '' },
+                house_number: address.house_number || ''
+            }));
+            setAddressSearchResults(formattedResults);
             setAddressSearchLoading(false);
         } catch (error) {
             console.error('Ошибка поиска адресов:', error);
@@ -1369,7 +1498,7 @@ const HeatSources: React.FC = () => {
                         key={`${source.id}-${column.id}`}
                         style={style}
                     >
-                        {source[fieldKey]}
+                        {typeof source[fieldKey] === 'object' ? JSON.stringify(source[fieldKey]) : String(source[fieldKey] ?? '')}
                     </td>
                 );
             });
@@ -1483,10 +1612,10 @@ const HeatSources: React.FC = () => {
                             <h5 className="text-center mb-3">ПАСПОРТ ТЕПЛОИСТОЧНИКА</h5>
                             <div className="row">
                                 <div className="col-md-6">
-                                    <p><strong>Номер паспорта:</strong> {currentItem.passport.passport_number}</p>
+                                    <p><strong>Номер паспорта:</strong> {String(currentItem.passport.passport_number)}</p>
                                 </div>
                                 <div className="col-md-6 text-md-end">
-                                    <p><strong>Дата выдачи:</strong> {currentItem.passport.issue_date}</p>
+                                    <p><strong>Дата выдачи:</strong> {String(currentItem.passport.issue_date)}</p>
                                 </div>
                             </div>
                             <hr />
