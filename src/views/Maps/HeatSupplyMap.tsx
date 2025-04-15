@@ -1,16 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Modal, Button, Spinner, Form, ButtonGroup, InputGroup, Toast, ToastContainer } from 'react-bootstrap';
+import { Card, Row, Col, Modal, Button, Spinner } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   initializeApi,
   getHeatSupplyMapData,
   getHeatSourceTypes,
   getOrganizations,
-  getHeatSourcePeriods,
-  getHeatSourceDetails
+  getHeatSourcePeriods
 } from '../../services/api';
-import { HeatMapParams, HeatSupplyMapItem } from '../../services/api';
-
 declare global {
   interface Window {
     ymaps: any;
@@ -24,6 +21,13 @@ interface HeatSource {
   period?: { id: number; name: string };
   owner?: { id: number; shortName?: string; fullName?: string; phone?: string; email?: string; address?: string };
   org?: { id: number; shortName?: string; fullName?: string; phone?: string; email?: string; address?: string };
+  address?: {
+    latitude: string;
+    longitude: string;
+    city?: string;
+    street?: string;
+    house?: string;
+  };
   parameters?: {
     coordinates?: {
       center_lat?: string;
@@ -54,12 +58,12 @@ const HeatSupplyMap: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [selectedHeatSource, setSelectedHeatSource] = useState<HeatSource | null>(null);
   const [showModal, setShowModal] = useState<boolean>(false);
-  const [hsTypes, setHsTypes] = useState<any[]>([]);
-  const [organizations, setOrganizations] = useState<any[]>([]);
-  const [periods, setPeriods] = useState<any[]>([]);
+  const [_hsTypes, setHsTypes] = useState<any[]>([]);
+  const [_organizations, setOrganizations] = useState<any[]>([]);
+  const [_periods, setPeriods] = useState<any[]>([]);
   const [highlightedAddresses, setHighlightedAddresses] = useState<any[]>([]);
   const [highlightedPlacemarks, setHighlightedPlacemarks] = useState<any[]>([]);
-  const [mapBoundaries, setMapBoundaries] = useState<any>(null);
+  const [, setMapBoundaries] = useState<any>(null);
   const [heatSourceZone, setHeatSourceZone] = useState<any>(null);
 
   const mapRef = useRef<HTMLDivElement>(null);
@@ -144,7 +148,7 @@ const HeatSupplyMap: React.FC = () => {
         }
 
         // Затем добавляем адреса для этого теплоисточника
-        if (heatSource.parameters?.addresses?.length > 0) {
+        if (heatSource.parameters?.addresses && heatSource.parameters.addresses.length > 0) {
           heatSource.parameters.addresses.forEach(address => {
             if (address.latitude && address.longitude) {
               const addressPlacemark = new window.ymaps.Placemark(
@@ -277,15 +281,7 @@ const HeatSupplyMap: React.FC = () => {
     }
   };
 
-  const getHeatSourceIcon = (typeSlug?: string): string => {
-    switch (typeSlug) {
-      case 'boiler': return 'islands#redCircleIcon';
-      case 'chpp': return 'islands#orangeCircleIcon';
-      case 'individual': return 'islands#blueCircleIcon';
-      case 'central': return 'islands#darkGreenCircleIcon';
-      default: return 'islands#darkBlueCircleIcon';
-    }
-  };
+
 
 
 
@@ -631,7 +627,7 @@ const HeatSupplyMap: React.FC = () => {
                       <h6 className="mb-0">Адреса</h6>
                     </div>
                     <div className="card-body">
-                      {selectedHeatSource.parameters?.addresses?.length > 0 ? (
+                      {selectedHeatSource.parameters?.addresses && selectedHeatSource.parameters.addresses.length > 0 ? (
                           <div className="addresses-list-container">
                             <ul className="list-group addresses-list">
                               {selectedHeatSource.parameters.addresses.map((address: any, index: number) => (
