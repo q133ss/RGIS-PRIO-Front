@@ -105,14 +105,18 @@ const HeatingSchedulePage: React.FC = () => {
     houseNumbers: [] as string[],
   });
 
+  // Эти переменные используются в loadFilterCities и loadFilterStreets, но их значения не используются в рендере
   const [filterCities, setFilterCities] = useState<City[]>([]);
   const [filterStreets, setFilterStreets] = useState<Street[]>([]);
 
   useEffect(() => {
     const loadCities = async () => {
       try {
-        const response = await getCities(); // response содержит свойство data с массивом городов
-        const citiesData = response.data; // Получаем массив городов из response.data
+        // TypeScript ошибка: Property 'data' does not exist on type 'City[]'.
+        // Это означает, что API getCities() сейчас возвращает массив City[] напрямую, а не объект с полем data
+        const response = await getCities();
+        // Проверяем, является ли response объектом с полем data или прямым массивом
+        const citiesData = Array.isArray(response) ? response : (response as any).data || [];
 
         setFilterOptions(prev => ({
           ...prev,
@@ -169,6 +173,7 @@ const HeatingSchedulePage: React.FC = () => {
     connection_omsu_order_title: null,
     connection_omsu_order_additional_info: null
   });
+  // setModalCities не используется, но может понадобиться в будущем
   const [modalCities, setModalCities] = useState<City[]>([]);
   const [modalStreets, setModalStreets] = useState<Street[]>([]);
   const [modalBuildings, setModalBuildings] = useState<MkdBuilding[]>([]);
@@ -198,6 +203,7 @@ const HeatingSchedulePage: React.FC = () => {
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [authError, setAuthError] = useState<boolean>(false);
   const [apiRetryCount, setApiRetryCount] = useState<number>(0);
+  // apiSuccessful не используется напрямую, но setApiSuccessful вызывается в нескольких местах
   const [apiSuccessful, setApiSuccessful] = useState<boolean>(false);
 
   useEffect(() => {
@@ -486,15 +492,15 @@ const HeatingSchedulePage: React.FC = () => {
           actual_disconnection_date: scheduleDetails.actual_disconnection_date?.split('T')[0] ?? null,
           actual_connection_date: scheduleDetails.actual_connection_date?.split('T')[0] ?? null,
           // Handle disconnect order data (from either nested object or flat fields)
-          disconnection_omsu_order_number: scheduleDetails.disconnect_order?.number ?? scheduleDetails.disconnection_omsu_order_number ?? null,
-          disconnection_omsu_order_date: scheduleDetails.disconnect_order?.date?.split('T')[0] ?? scheduleDetails.disconnection_omsu_order_date?.split('T')[0] ?? null,
-          disconnection_omsu_order_title: scheduleDetails.disconnect_order?.title ?? scheduleDetails.disconnection_omsu_order_title ?? null,
-          disconnection_omsu_order_additional_info: scheduleDetails.disconnect_order?.additional_info ?? scheduleDetails.disconnection_omsu_order_additional_info ?? null,
+          disconnection_omsu_order_number: (scheduleDetails as any).disconnect_order?.number ?? scheduleDetails.disconnection_omsu_order_number ?? null,
+          disconnection_omsu_order_date: (scheduleDetails as any).disconnect_order?.date?.split('T')[0] ?? scheduleDetails.disconnection_omsu_order_date?.split('T')[0] ?? null,
+          disconnection_omsu_order_title: (scheduleDetails as any).disconnect_order?.title ?? scheduleDetails.disconnection_omsu_order_title ?? null,
+          disconnection_omsu_order_additional_info: (scheduleDetails as any).disconnect_order?.additional_info ?? scheduleDetails.disconnection_omsu_order_additional_info ?? null,
           // Handle connect order data (from either nested object or flat fields)
-          connection_omsu_order_number: scheduleDetails.connect_order?.number ?? scheduleDetails.connection_omsu_order_number ?? null,
-          connection_omsu_order_date: scheduleDetails.connect_order?.date?.split('T')[0] ?? scheduleDetails.connection_omsu_order_date?.split('T')[0] ?? null,
-          connection_omsu_order_title: scheduleDetails.connect_order?.title ?? scheduleDetails.connection_omsu_order_title ?? null,
-          connection_omsu_order_additional_info: scheduleDetails.connect_order?.additional_info ?? scheduleDetails.connection_omsu_order_additional_info ?? null
+          connection_omsu_order_number: (scheduleDetails as any).connect_order?.number ?? scheduleDetails.connection_omsu_order_number ?? null,
+          connection_omsu_order_date: (scheduleDetails as any).connect_order?.date?.split('T')[0] ?? scheduleDetails.connection_omsu_order_date?.split('T')[0] ?? null,
+          connection_omsu_order_title: (scheduleDetails as any).connect_order?.title ?? scheduleDetails.connection_omsu_order_title ?? null,
+          connection_omsu_order_additional_info: (scheduleDetails as any).connect_order?.additional_info ?? scheduleDetails.connection_omsu_order_additional_info ?? null
         });
       } catch (error: any) {
         setFormError(`Ошибка загрузки: ${error.message || ''}`);
@@ -640,6 +646,7 @@ const HeatingSchedulePage: React.FC = () => {
     loadHeatingSchedule();
   };
 
+  // Функция определена, но не используется в текущей версии компонента
   const handleResetFilters = () => {
     setState(prev => ({
       ...prev,
@@ -700,8 +707,8 @@ const HeatingSchedulePage: React.FC = () => {
       setApiSuccessful(true);
       const filteredItems = response.data.filter(item => {
         const address = formatAddress(item);
-        const disconnectNumber = item.disconnect_order?.number || item.disconnection_omsu_order_number;
-        const connectNumber = item.connect_order?.number || item.connection_omsu_order_number;
+        const disconnectNumber = (item as any).disconnect_order?.number || item.disconnection_omsu_order_number;
+        const connectNumber = (item as any).connect_order?.number || item.connection_omsu_order_number;
         
         return address.toLowerCase().includes(searchInput.toLowerCase()) ||
           (disconnectNumber && disconnectNumber.toLowerCase().includes(searchInput.toLowerCase())) ||
@@ -949,9 +956,9 @@ const HeatingSchedulePage: React.FC = () => {
           cellContent = formatDate(item[fieldKey] as string);
         } else if (fieldKey === 'disconnection_omsu_order_number') {
           // Handle both formats - nested object or flat fields
-          const orderNumber = item.disconnect_order?.number || item.disconnection_omsu_order_number;
-          const orderTitle = item.disconnect_order?.title || item.disconnection_omsu_order_title;
-          const orderDate = item.disconnect_order?.date || item.disconnection_omsu_order_date;
+          const orderNumber = (item as any).disconnect_order?.number || item.disconnection_omsu_order_number;
+          const orderTitle = (item as any).disconnect_order?.title || item.disconnection_omsu_order_title;
+          const orderDate = (item as any).disconnect_order?.date || item.disconnection_omsu_order_date;
           
           cellContent = orderNumber ? (
             <OverlayTrigger overlay={
@@ -965,9 +972,9 @@ const HeatingSchedulePage: React.FC = () => {
           ) : ('-');
         } else if (fieldKey === 'connection_omsu_order_number') {
           // Handle both formats - nested object or flat fields
-          const orderNumber = item.connect_order?.number || item.connection_omsu_order_number;
-          const orderTitle = item.connect_order?.title || item.connection_omsu_order_title;
-          const orderDate = item.connect_order?.date || item.connection_omsu_order_date;
+          const orderNumber = (item as any).connect_order?.number || item.connection_omsu_order_number;
+          const orderTitle = (item as any).connect_order?.title || item.connection_omsu_order_title;
+          const orderDate = (item as any).connect_order?.date || item.connection_omsu_order_date;
           
           cellContent = orderNumber ? (
             <OverlayTrigger overlay={
