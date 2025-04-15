@@ -198,7 +198,7 @@ const MkdMap: React.FC = () => {
       const response = await api.get<HouseType[]>('/house-type');
       return response.map(item => ({
         id: item.id,
-        name: item.houseTypeName
+        houseTypeName: item.houseTypeName
       }));
     } catch (err) {
       console.error('Ошибка при получении типов домов:', err);
@@ -361,8 +361,8 @@ const MkdMap: React.FC = () => {
 
       // Устанавливаем границы карты
       const bounds = [
-        [parseFloat(mapBoundaries.south_west_lat), parseFloat(mapBoundaries.south_west_lng)],
-        [parseFloat(mapBoundaries.north_east_lat), parseFloat(mapBoundaries.north_east_lng)]
+        [mapBoundaries.south_west_lat, mapBoundaries.south_west_lng],
+        [mapBoundaries.north_east_lat, mapBoundaries.north_east_lng]
       ];
 
       // Ограничиваем область просмотра
@@ -401,10 +401,10 @@ const MkdMap: React.FC = () => {
         const lat = parseFloat(item.address.latitude);
         const lng = parseFloat(item.address.longitude);
 
-        return lat >= parseFloat(mapBoundaries.south_west_lat) &&
-            lat <= parseFloat(mapBoundaries.north_east_lat) &&
-            lng >= parseFloat(mapBoundaries.south_west_lng) &&
-            lng <= parseFloat(mapBoundaries.north_east_lng);
+        return lat >= mapBoundaries.south_west_lat &&
+            lat <= mapBoundaries.north_east_lat &&
+            lng >= mapBoundaries.south_west_lng &&
+            lng <= mapBoundaries.north_east_lng;
       });
 
       // Создаем метки только для точек в пределах границ
@@ -532,12 +532,12 @@ const MkdMap: React.FC = () => {
         const clusterBounds = clusterer.getBounds();
         const restrictedBounds = [
           [
-            Math.max(clusterBounds[0][0], parseFloat(mapBoundaries.south_west_lat)),
-            Math.max(clusterBounds[0][1], parseFloat(mapBoundaries.south_west_lng))
+            Math.max(clusterBounds[0][0], mapBoundaries.south_west_lat),
+            Math.max(clusterBounds[0][1], mapBoundaries.south_west_lng)
           ],
           [
-            Math.min(clusterBounds[1][0], parseFloat(mapBoundaries.north_east_lat)),
-            Math.min(clusterBounds[1][1], parseFloat(mapBoundaries.north_east_lng))
+            Math.min(clusterBounds[1][0], mapBoundaries.north_east_lat),
+            Math.min(clusterBounds[1][1], mapBoundaries.north_east_lng)
           ]
         ];
 
