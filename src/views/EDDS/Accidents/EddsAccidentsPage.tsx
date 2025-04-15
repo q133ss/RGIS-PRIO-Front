@@ -1,13 +1,16 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Row, Col, Button, Alert, ButtonGroup, Spinner, Badge } from 'react-bootstrap';
+import { Card, Row, Col, Button, Alert, ButtonGroup, Spinner, Badge, Modal, Form, InputGroup } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   getEddsAccidents,
   getIncidentTypes,
   getIncidentResourceTypes,
   updateEddsIncident,
+  createIncident,
   EddsResponse,
-  EddsIncident
+  EddsIncident,
+  getCities,
+  searchAddresses
 } from '../../../services/api';
 import EddsMap from '../common/EddsMap';
 import EddsTable from '../common/EddsTable';
@@ -19,6 +22,59 @@ const MAX_API_RETRY_ATTEMPTS = 3;
 interface FocusedIncidentWithAddress {
   incident: EddsIncident;
   address: any; // Use your actual Address type here
+}
+
+interface NewIncidentFormData {
+  title: string;
+  description: string;
+  incident_type_id: number | undefined;
+  incident_resource_type_id: number | undefined;
+  is_complaint: boolean;
+  addresses: {id: number}[];
+}
+
+// Add interfaces for API response structures
+interface PaginatedResponse<T> {
+  current_page: number;
+  data: T[];
+  first_page_url: string;
+  from: number;
+  last_page: number;
+  last_page_url: string;
+  links: any[];
+  next_page_url: string | null;
+  path: string;
+  per_page: number;
+  prev_page_url: string | null;
+  to: number;
+  total: number;
+}
+
+interface City {
+  id: number;
+  name: string;
+  region_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Address {
+  id: number;
+  street_id: number;
+  house_number: string;
+  building: string | null;
+  structure: string | null;
+  literature: string | null;
+  latitude: string;
+  longitude: string;
+  street?: {
+    id: number;
+    name: string;
+    city?: {
+      id: number;
+      name: string;
+    }
+  };
 }
 
 const EddsAccidentsPage: React.FC = () => {
@@ -51,9 +107,29 @@ const EddsAccidentsPage: React.FC = () => {
   // Replace the old focusedIncident state with the new one that includes address
   const [focusedIncidentWithAddress, setFocusedIncidentWithAddress] = useState<FocusedIncidentWithAddress | null>(null);
 
+  // New state for the create incident modal
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [creatingIncident, setCreatingIncident] = useState<boolean>(false);
+  const [incidentFormError, setIncidentFormError] = useState<string | null>(null);
+  const [newIncidentForm, setNewIncidentForm] = useState<NewIncidentFormData>({
+    title: '',
+    description: '',
+    incident_type_id: undefined,
+    incident_resource_type_id: undefined,
+    is_complaint: false,
+    addresses: []
+  });
+  const [selectedAddresses, setSelectedAddresses] = useState<number[]>([]);
+  const [addressSearchTerm, setAddressSearchTerm] = useState<string>('');
+  const [availableAddresses, setAvailableAddresses] = useState<Address[]>([]);
+  const [cities, setCities] = useState<City[]>([]); // Initialize as empty array
+  const [selectedCity, setSelectedCity] = useState<number | null>(null);
+  const [addressLoading, setAddressLoading] = useState<boolean>(false);
+
   useEffect(() => {
     loadData();
     loadReferences();
+    loadCities();
   }, []);
 
   const loadData = async (page = 1) => {
@@ -83,7 +159,7 @@ const EddsAccidentsPage: React.FC = () => {
       setData(response);
       setCurrentPage(page);
       setLoading(false);
-    } catch (error) {
+    } catch (err) {
       setApiRetryCount(prev => prev + 1);
       setError(`Ошибка загрузки данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`);
       setLoading(false);
@@ -96,11 +172,75 @@ const EddsAccidentsPage: React.FC = () => {
         getIncidentTypes(),
         getIncidentResourceTypes()
       ]);
-      setFilterOptions({ incidentTypes, resourceTypes });
-    } catch (error) {
-      console.error('Ошибка загрузки справочных данных:', error);
+      setFilterOptions({ 
+        incidentTypes: Array.isArray(incidentTypes) ? incidentTypes : [],
+        resourceTypes: Array.isArray(resourceTypes) ? resourceTypes : []
+      });
+    } catch (err) {
+      console.error('Ошибка загрузки справочных данных:', err);
+      setFilterOptions({ incidentTypes: [], resourceTypes: [] });
     }
   };
+
+  const loadCities = async () => {
+    try {
+      const citiesResponse = await getCities();
+      
+      // Handle paginated response
+      if (citiesResponse && typeof citiesResponse === 'object' && 'data' in citiesResponse && Array.isArray(citiesResponse.data)) {
+        setCities(citiesResponse.data);
+        // Default to first city if available
+        if (citiesResponse.data.length > 0) {
+          setSelectedCity(citiesResponse.data[0].id);
+        }
+      } 
+      // Handle direct array response
+      else if (Array.isArray(citiesResponse)) {
+        setCities(citiesResponse);
+        if (citiesResponse.length > 0) {
+          setSelectedCity(citiesResponse[0].id);
+        }
+      } else {
+        console.error('Некорректный формат данных городов:', citiesResponse);
+        setCities([]);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки городов:', err);
+      setCities([]);
+    }
+  };
+
+  const loadAddresses = async (cityId: number, searchTerm: string = '') => {
+    if (!cityId) return;
+    
+    try {
+      setAddressLoading(true);
+      const addressesResponse = await searchAddresses(cityId, searchTerm);
+      
+      // Handle paginated response
+      if (addressesResponse && typeof addressesResponse === 'object' && 'data' in addressesResponse && Array.isArray(addressesResponse.data)) {
+        setAvailableAddresses(addressesResponse.data);
+      } 
+      // Handle direct array response
+      else if (Array.isArray(addressesResponse)) {
+        setAvailableAddresses(addressesResponse);
+      } else {
+        console.warn('Некорректный формат данных адресов:', addressesResponse);
+        setAvailableAddresses([]);
+      }
+    } catch (err) {
+      console.error('Ошибка загрузки адресов:', err);
+      setAvailableAddresses([]);
+    } finally {
+      setAddressLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (selectedCity && showCreateModal) {
+      loadAddresses(selectedCity, addressSearchTerm);
+    }
+  }, [selectedCity, addressSearchTerm, showCreateModal]);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -184,8 +324,8 @@ const EddsAccidentsPage: React.FC = () => {
         });
       }
       
-    } catch (error) {
-      console.error('Error updating incident:', error);
+    } catch (err) {
+      console.error('Error updating incident:', err);
       // Show error notification
       setError('Ошибка при обновлении данных инцидента.');
     } finally {
@@ -219,6 +359,131 @@ const EddsAccidentsPage: React.FC = () => {
     setView('map');
   };
 
+  // New handlers for the create incident modal
+  const handleOpenCreateModal = () => {
+    setIncidentFormError(null);
+    setNewIncidentForm({
+      title: '',
+      description: '',
+      incident_type_id: filterOptions?.incidentTypes?.[0]?.id || undefined,
+      incident_resource_type_id: filterOptions?.resourceTypes?.[0]?.id || undefined,
+      is_complaint: false,
+      addresses: []
+    });
+    setSelectedAddresses([]);
+    setAddressSearchTerm('');
+    setShowCreateModal(true);
+  };
+
+  const handleCloseCreateModal = () => {
+    setShowCreateModal(false);
+    setCreatingIncident(false);
+    setIncidentFormError(null);
+  };
+
+  const handleIncidentInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setNewIncidentForm(prev => ({
+      ...prev,
+      [name]: value
+    }));
+  };
+
+  const handleIncidentSelectChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    setNewIncidentForm(prev => ({
+      ...prev,
+      [name]: value ? parseInt(value, 10) : undefined
+    }));
+  };
+
+  const handleToggleComplaint = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewIncidentForm(prev => ({
+      ...prev,
+      is_complaint: e.target.checked
+    }));
+  };
+
+  const handleAddressSelection = (e: React.ChangeEvent<HTMLInputElement>, addressId: number) => {
+    const isSelected = e.target.checked;
+    if (isSelected) {
+      setSelectedAddresses(prev => [...prev, addressId]);
+    } else {
+      setSelectedAddresses(prev => prev.filter(id => id !== addressId));
+    }
+  };
+
+  const handleCreateIncident = async () => {
+    // Validate form
+    if (!newIncidentForm.title.trim()) {
+      setIncidentFormError('Введите заголовок инцидента');
+      return;
+    }
+    
+    if (!newIncidentForm.incident_type_id) {
+      setIncidentFormError('Выберите тип инцидента');
+      return;
+    }
+    
+    if (!newIncidentForm.incident_resource_type_id) {
+      setIncidentFormError('Выберите тип ресурса');
+      return;
+    }
+    
+    if (selectedAddresses.length === 0) {
+      setIncidentFormError('Выберите хотя бы один адрес');
+      return;
+    }
+    
+    try {
+      setCreatingIncident(true);
+      setIncidentFormError(null);
+      
+      // Update addresses with selected IDs
+      const formData = {
+        title: newIncidentForm.title,
+        description: newIncidentForm.description,
+        incident_type_id: newIncidentForm.incident_type_id,
+        incident_resource_type_id: newIncidentForm.incident_resource_type_id,
+        is_complaint: newIncidentForm.is_complaint,
+        address_ids: selectedAddresses
+      };
+      
+      await createIncident(formData);
+      handleCloseCreateModal();
+      
+      // Reload data to show the new incident
+      loadData(currentPage);
+      
+      // Alert user of success (could be improved with a toast notification)
+      setError(null);
+      
+    } catch (err) {
+      console.error('Error creating incident:', err);
+      setIncidentFormError(err instanceof Error ? err.message : 'Не удалось создать инцидент');
+    } finally {
+      setCreatingIncident(false);
+    }
+  };
+
+  const handleCityChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const cityId = parseInt(e.target.value, 10);
+    setSelectedCity(cityId);
+    setSelectedAddresses([]);
+    setAddressSearchTerm('');
+  };
+
+  const getAddressTooltip = (addr: any): string => {
+    let tooltip = '';
+    if (addr.street?.city?.name) tooltip += `${addr.street.city.name}, `;
+    if (addr.street?.name) tooltip += `ул. ${addr.street.name}, `;
+    if (addr.house_number) tooltip += `д. ${addr.house_number}`;
+    if (addr.building) tooltip += ` корп. ${addr.building}`;
+    if (addr.structure) tooltip += ` стр. ${addr.structure}`;
+    if (addr.literature) tooltip += ` лит. ${addr.literature}`;
+    return tooltip || 'Адрес не указан';
+  };
+
   return (
     <React.Fragment>
       <div className="page-header">
@@ -239,29 +504,39 @@ const EddsAccidentsPage: React.FC = () => {
               </ul>
             </div>
             <div className="col-md-6 text-end">
-              <ButtonGroup>
+              <div className="d-flex justify-content-end align-items-center">
+                <ButtonGroup className="me-2">
+                  <Button
+                    variant={view === 'table' ? 'primary' : 'outline-primary'}
+                    onClick={() => toggleView('table')}
+                  >
+                    <i className="ti ti-table me-1"></i> Таблица
+                  </Button>
+                  <Button
+                    variant={view === 'map' ? 'primary' : 'outline-primary'}
+                    onClick={() => toggleView('map')}
+                  >
+                    <i className="ti ti-map me-1"></i> Карта
+                  </Button>
+                </ButtonGroup>
+                
                 <Button
-                  variant={view === 'table' ? 'primary' : 'outline-primary'}
-                  onClick={() => toggleView('table')}
+                  variant="outline-success"
+                  className="me-2"
+                  onClick={() => loadData(currentPage)}
+                  disabled={loading}
+                  title="Обновить данные"
                 >
-                  <i className="ti ti-table me-1"></i> Таблица
+                  <i className="ti ti-refresh"></i>
                 </Button>
+                
                 <Button
-                  variant={view === 'map' ? 'primary' : 'outline-primary'}
-                  onClick={() => toggleView('map')}
+                  variant="success"
+                  onClick={handleOpenCreateModal}
                 >
-                  <i className="ti ti-map me-1"></i> Карта
+                  <i className="ti ti-plus me-1"></i> Создать инцидент
                 </Button>
-              </ButtonGroup>
-              <Button
-                variant="outline-success"
-                className="ms-2"
-                onClick={() => loadData(currentPage)}
-                disabled={loading}
-                title="Обновить данные"
-              >
-                <i className="ti ti-refresh"></i>
-              </Button>
+              </div>
             </div>
           </div>
         </div>
@@ -351,16 +626,202 @@ const EddsAccidentsPage: React.FC = () => {
           </Card>
         </Col>
       </Row>
+      
+      {/* Detail Modal */}
       <EddsDetailModal
         show={showDetailModal}
         onHide={() => setShowDetailModal(false)}
         incident={currentIncident}
         loading={detailLoading}
         onSave={handleSaveIncidentChanges}
-        // If you want to show the current address in the detail modal, 
-        // add a prop for it (assuming your EddsDetailModal can accept this)
-        // address={currentAddress}
       />
+
+      {/* Create Incident Modal */}
+      <Modal
+        show={showCreateModal}
+        onHide={handleCloseCreateModal}
+        backdrop="static"
+        keyboard={false}
+        size="lg"
+        centered
+      >
+        <Modal.Header closeButton>
+          <Modal.Title>Создание нового инцидента</Modal.Title>
+        </Modal.Header>
+        <Modal.Body>
+          {incidentFormError && (
+            <div className="alert alert-danger" role="alert">
+              <i className="ti ti-alert-circle me-2"></i>
+              {incidentFormError}
+            </div>
+          )}
+          
+          <Form>
+            <Form.Group className="mb-3">
+              <Form.Label>Заголовок <span className="text-danger">*</span></Form.Label>
+              <Form.Control
+                type="text"
+                name="title"
+                placeholder="Введите заголовок инцидента"
+                value={newIncidentForm.title}
+                onChange={handleIncidentInputChange}
+                required
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Описание</Form.Label>
+              <Form.Control
+                as="textarea"
+                name="description"
+                placeholder="Введите описание инцидента"
+                value={newIncidentForm.description}
+                onChange={handleIncidentInputChange}
+                rows={3}
+              />
+            </Form.Group>
+            
+            <Row>
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Тип инцидента <span className="text-danger">*</span></Form.Label>
+                  <Form.Select
+                    name="incident_type_id"
+                    value={newIncidentForm.incident_type_id || ''}
+                    onChange={handleIncidentSelectChange}
+                    required
+                  >
+                    <option value="">Выберите тип инцидента</option>
+                    {Array.isArray(filterOptions?.incidentTypes) && filterOptions.incidentTypes.map(type => (
+                      <option key={type.id} value={type.id}>
+                        {type.name}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+              
+              <Col md={6}>
+                <Form.Group className="mb-3">
+                  <Form.Label>Тип ресурса <span className="text-danger">*</span></Form.Label>
+                  <Form.Select
+                    name="incident_resource_type_id"
+                    value={newIncidentForm.incident_resource_type_id || ''}
+                    onChange={handleIncidentSelectChange}
+                    required
+                  >
+                    <option value="">Выберите тип ресурса</option>
+                    {Array.isArray(filterOptions?.resourceTypes) && filterOptions.resourceTypes.map(type => (
+                      <option key={type.id} value={type.id}>
+                        {type.name}
+                      </option>
+                    ))}
+                  </Form.Select>
+                </Form.Group>
+              </Col>
+            </Row>
+            
+            <Form.Group className="mb-3">
+              <Form.Check
+                type="checkbox"
+                id="is-complaint-checkbox"
+                label="Это жалоба от населения"
+                checked={newIncidentForm.is_complaint}
+                onChange={handleToggleComplaint}
+              />
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Город</Form.Label>
+              <Form.Select
+                value={selectedCity || ''}
+                onChange={handleCityChange}
+                disabled={addressLoading}
+              >
+                <option value="">Выберите город</option>
+                {Array.isArray(cities) && cities.map(city => (
+                  <option key={`city-${city.id}`} value={city.id}>
+                    {city.name}
+                  </option>
+                ))}
+              </Form.Select>
+            </Form.Group>
+            
+            <Form.Group className="mb-3">
+              <Form.Label>Адреса <span className="text-danger">*</span></Form.Label>
+              <InputGroup className="mb-2">
+                <Form.Control
+                  placeholder="Поиск адреса..."
+                  value={addressSearchTerm}
+                  onChange={(e) => setAddressSearchTerm(e.target.value)}
+                  disabled={!selectedCity || addressLoading}
+                />
+                {addressSearchTerm && (
+                  <Button 
+                    variant="outline-secondary" 
+                    onClick={() => setAddressSearchTerm('')}
+                    disabled={addressLoading}
+                  >
+                    <i className="ti ti-x"></i>
+                  </Button>
+                )}
+              </InputGroup>
+              
+              <div className="address-list border rounded p-2" style={{ maxHeight: '200px', overflowY: 'auto' }}>
+                {addressLoading ? (
+                  <div className="text-center py-3">
+                    <Spinner animation="border" size="sm" variant="primary" />
+                    <p className="mb-0 mt-2">Загрузка адресов...</p>
+                  </div>
+                ) : availableAddresses.length > 0 ? (
+                  availableAddresses.map((address, index) => (
+                    <div key={`addr-${address.id}-${index}`} className="d-flex align-items-center mb-2">
+                      <Form.Check
+                        type="checkbox"
+                        id={`address-${address.id}-${index}`}
+                        checked={selectedAddresses.includes(address.id)}
+                        onChange={(e) => handleAddressSelection(e, address.id)}
+                        label={getAddressTooltip(address)}
+                      />
+                    </div>
+                  ))
+                ) : selectedCity ? (
+                  <div className="text-center text-muted py-3">
+                    {addressSearchTerm ? 'Нет адресов, соответствующих поисковому запросу' : 'Нет доступных адресов'}
+                  </div>
+                ) : (
+                  <div className="text-center text-muted py-3">
+                    Выберите город для загрузки адресов
+                  </div>
+                )}
+              </div>
+              
+              <div className="mt-2 small text-muted">
+                Выбрано адресов: {selectedAddresses.length}
+              </div>
+            </Form.Group>
+          </Form>
+        </Modal.Body>
+        <Modal.Footer>
+          <Button variant="secondary" onClick={handleCloseCreateModal} disabled={creatingIncident}>
+            Отмена
+          </Button>
+          <Button 
+            variant="primary" 
+            onClick={handleCreateIncident}
+            disabled={creatingIncident}
+          >
+            {creatingIncident ? (
+              <>
+                <Spinner as="span" animation="border" size="sm" role="status" aria-hidden="true" className="me-2" />
+                Создание...
+              </>
+            ) : (
+              'Создать инцидент'
+            )}
+          </Button>
+        </Modal.Footer>
+      </Modal>
       
       <style>
         {`

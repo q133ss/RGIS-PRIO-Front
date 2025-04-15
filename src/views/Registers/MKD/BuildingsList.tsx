@@ -63,9 +63,13 @@ const BuildingsList: React.FC = () => {
         success: ''
     });
 
-    const [exportState, setExportState] = useState({
+    const [exportState, setExportState] = useState<{
+        loading: boolean;
+        progress: string | null;
+        error: string | null;
+    }>({
         loading: false,
-        progress: '',
+        progress: null,
         error: null
     });
 
@@ -717,8 +721,8 @@ const BuildingsList: React.FC = () => {
                     console.error('Error checking export status:', error);
                     setExportState({
                         loading: false,
-                        progress: '',
-                        error: `Ошибка при проверке статуса экспорта: ${error}`
+                        progress: '' as string | null,
+                        error: `Ошибка при проверке статуса экспорта: ${error}` as string | null
                     });
                 }
                 
@@ -727,8 +731,8 @@ const BuildingsList: React.FC = () => {
                     clearInterval(checkExportStatusInterval);
                     setExportState({
                         loading: false,
-                        progress: '',
-                        error: `Превышено время ожидания экспорта. Попробуйте позже или обратитесь к администратору.`
+                        progress: '' as string | null,
+                        error: `Превышено время ожидания экспорта. Попробуйте позже или обратитесь к администратору.` as string | null
                     });
                 }
             }, EXPORT_STATUS_CHECK_INTERVAL);
@@ -737,8 +741,8 @@ const BuildingsList: React.FC = () => {
             console.error('Export error:', error);
             setExportState({
                 loading: false,
-                progress: '',
-                error: `Ошибка экспорта: ${error}`
+                progress: '' as string | null,
+                error: `Ошибка экспорта: ${error}` as string | null
             });
         }
     };
@@ -1526,6 +1530,7 @@ const BuildingsList: React.FC = () => {
                                                 <option key={condition.id} value={condition.id}>{condition.houseCondition || condition.name}</option>
                                             ))}
                                         </Form.Select>
+
                                     </Form.Group>
                                 </Col>
                                 <Col xs={12}>

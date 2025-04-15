@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
-import { checkPermissionWithCache } from '../services/permissionsService';
+import { checkPermissionWithCache, isAdmin } from '../services/permissionsService';
 
 /**
  * Хук для проверки разрешений с отслеживанием состояния загрузки
- * @param permissionSlug Slug разрешения для проверки
+ * @param permissionSlug Slug разрешения для проверки или массив slug'ов (требуется один из списка)
  * @returns Объект с флагами hasAccess и loading
  */
-const usePermission = (permissionSlug: string) => {
+const usePermission = (permissionSlug: string | string[] | null) => {
   const [hasAccess, setHasAccess] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
@@ -15,7 +15,35 @@ const usePermission = (permissionSlug: string) => {
       try {
         setLoading(true);
         
-        // Стандартная проверка прав через сервис
+        // Если пользователь администратор, доступ разрешен всегда
+        if (isAdmin()) {
+          setHasAccess(true);
+          return;
+        }
+        
+        // Если permissionSlug равен null, считаем что доступ разрешен
+        if (permissionSlug === null) {
+          setHasAccess(true);
+          return;
+        }
+        
+        // Если передан массив, проверяем наличие любого из указанных прав
+        if (Array.isArray(permissionSlug)) {
+          if (permissionSlug.length === 0) {
+            setHasAccess(true);
+            return;
+          }
+          
+          // Проверяем каждое право, если хоть одно есть - доступ разрешен
+          const results = await Promise.all(
+            permissionSlug.map(slug => checkPermissionWithCache(slug))
+          );
+          
+          setHasAccess(results.some(result => result === true));
+          return;
+        }
+        
+        // Стандартная проверка одного права
         const result = await checkPermissionWithCache(permissionSlug);
         setHasAccess(result);
       } catch (error) {
@@ -34,21 +62,21 @@ const usePermission = (permissionSlug: string) => {
 
 /**
  * Хук для проверки доступа администратора
- * @returns Объект с флагами isAdmin и loading
+ * @returns Объект с флагами isAdminUser и loading
  */
 export const useAdminAccess = () => {
-  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [isAdminUser, setIsAdminUser] = useState<boolean>(false);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const checkAdminAccess = async () => {
+    const checkAdminAccess = () => {
       try {
         setLoading(true);
-        const hasAccess = await checkPermissionWithCache('admin_access');
-        setIsAdmin(hasAccess);
+        const adminStatus = isAdmin();
+        setIsAdminUser(adminStatus);
       } catch (error) {
         console.error('Ошибка при проверке административного доступа:', error);
-        setIsAdmin(false);
+        setIsAdminUser(false);
       } finally {
         setLoading(false);
       }
@@ -57,7 +85,7 @@ export const useAdminAccess = () => {
     checkAdminAccess();
   }, []);
 
-  return { isAdmin, loading };
+  return { isAdmin: isAdminUser, loading };
 };
 
 export default usePermission;

@@ -509,7 +509,7 @@ export const getTechnicalConditions = async (): Promise<any[]> => {
   try {
     console.log('Fetching technical conditions from correct endpoint...');
     
-    const conditions = await fetchAPI('/hs/house/conditions');
+    const conditions = await fetchAPI('/house/conditions');
     console.log('Raw response from /hs/house/conditions:', conditions);
     
     let processedConditions = [];

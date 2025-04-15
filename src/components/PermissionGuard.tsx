@@ -1,47 +1,30 @@
-import React, { ReactNode, useEffect, useState } from 'react';
-import { checkPermissionWithCache } from '../services/permissionsService';
+// src/components/PermissionGuard.tsx
+
+import React from 'react';
+import usePermission from '../hooks/usePermission';
 
 interface PermissionGuardProps {
-  permissionSlug: string | null;
-  children: ReactNode;
-  fallback?: ReactNode;
+  permission: string | string[] | null;
+  fallback?: React.ReactNode; // Что показывать, если нет прав
+  children: React.ReactNode;
 }
 
-/**
- * Компонент для условного отображения элементов интерфейса в зависимости от прав доступа
- */
 const PermissionGuard: React.FC<PermissionGuardProps> = ({ 
-  permissionSlug, 
-  children, 
-  fallback = null 
+  permission, 
+  fallback = null, 
+  children 
 }) => {
-  const [hasAccess, setHasAccess] = useState<boolean>(false);
-  const [loading, setLoading] = useState<boolean>(true);
+  const { hasAccess, loading } = usePermission(permission);
 
-  useEffect(() => {
-    const checkAccess = async () => {
-      if (!permissionSlug) {
-        setHasAccess(true);
-        setLoading(false);
-        return;
-      }
+  if (loading) {
+    return <div className="loading-permission">Проверка прав...</div>;
+  }
 
-      try {
-        const result = await checkPermissionWithCache(permissionSlug);
-        setHasAccess(result);
-      } catch {
-        setHasAccess(false);
-      } finally {
-        setLoading(false);
-      }
-    };
+  if (!hasAccess) {
+    return <>{fallback}</>;
+  }
 
-    checkAccess();
-  }, [permissionSlug]);
-
-  if (loading) return null;
-  
-  return hasAccess ? <>{children}</> : <>{fallback}</>;
+  return <>{children}</>;
 };
 
 export default PermissionGuard;

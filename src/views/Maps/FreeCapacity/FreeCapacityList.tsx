@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Card, Row, Col, Button, Dropdown, Form, InputGroup, Spinner, Alert, Pagination, Offcanvas, OverlayTrigger, Tooltip } from 'react-bootstrap'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import {
   getFreeCapacityList,
   getFreeCapacityById,
@@ -13,29 +13,30 @@ import {
   FreeCapacityItem,
   FreeCapacityParams,
   FreeCapacityCreateData,
-  initializeApi
+  initializeApi,
+  TOKEN_KEY
 } from '../../../services/api'
 import DeleteModal from "../../../Common/DeleteModal"
 
-const MAX_API_RETRY_ATTEMPTS = 3
+const MAX_API_RETRY_ATTEMPTS = 3;
 
 interface TableColumn {
-  id: string
-  title: string
-  width: number
-  visible: boolean
-  field: keyof FreeCapacityItem | 'actions'
+  id: string;
+  title: string;
+  width: number;
+  visible: boolean;
+  field: keyof FreeCapacityItem | 'actions';
 }
 
 interface FreeCapacityState {
-  items: FreeCapacityItem[]
-  loading: boolean
-  error: string | null
-  searchQuery: string
-  currentPage: number
-  totalPages: number
-  totalItems: number
-  success: string
+  items: FreeCapacityItem[];
+  loading: boolean;
+  error: string | null;
+  searchQuery: string;
+  currentPage: number;
+  totalPages: number;
+  totalItems: number;
+  success: string;
 }
 
 const FreeCapacityList: React.FC = () => {
@@ -48,17 +49,17 @@ const FreeCapacityList: React.FC = () => {
     totalPages: 1,
     totalItems: 0,
     success: ''
-  })
+  });
   const [activeFilters, setActiveFilters] = useState<FreeCapacityParams>({
     resource_type_id: undefined,
     equipment_type_id: undefined,
     org_id: undefined
-  })
+  });
   const [filterOptions, setFilterOptions] = useState({
     resourceTypes: [] as any[],
     equipmentTypes: [] as any[],
     organizations: [] as any[]
-  })
+  });
   const [columns, setColumns] = useState<TableColumn[]>([
     { id: 'id', title: '№', width: 70, visible: true, field: 'id' },
     { id: 'resource', title: 'ТИП РЕСУРСА', width: 150, visible: true, field: 'resource' },
@@ -67,103 +68,104 @@ const FreeCapacityList: React.FC = () => {
     { id: 'coordinates', title: 'КОЛИЧЕСТВО ТОЧЕК', width: 150, visible: true, field: 'coordinates' },
     { id: 'created_at', title: 'ДАТА СОЗДАНИЯ', width: 150, visible: true, field: 'created_at' },
     { id: 'actions', title: 'ДЕЙСТВИЯ', width: 130, visible: true, field: 'actions' }
-  ])
-  const [isTableCustomized, setIsTableCustomized] = useState<boolean>(false)
-  const [sortField, setSortField] = useState<string>('id')
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
-  const [searchInput, setSearchInput] = useState('')
-  const [authError, setAuthError] = useState<boolean>(false)
-  const [apiRetryCount, setApiRetryCount] = useState<number>(0)
-  const [apiSuccessful, setApiSuccessful] = useState<boolean>(false)
-  const [showDetailsModal, setShowDetailsModal] = useState(false)
-  const [showDeleteModal, setShowDeleteModal] = useState(false)
-  const [showEditOffcanvas, setShowEditOffcanvas] = useState(false)
-  const [showColumnsSettings, setShowColumnsSettings] = useState(false)
-  const [currentItem, setCurrentItem] = useState<FreeCapacityItem | null>(null)
-  const [formLoading, setFormLoading] = useState(false)
-  const [formError, setFormError] = useState<string | null>(null)
+  ]);
+  const [isTableCustomized, setIsTableCustomized] = useState<boolean>(false);
+  const [sortField, setSortField] = useState<string>('id');
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [searchInput, setSearchInput] = useState('');
+  const [authError, setAuthError] = useState<boolean>(false);
+  const [apiRetryCount, setApiRetryCount] = useState<number>(0);
+  const [apiSuccessful, setApiSuccessful] = useState<boolean>(false);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditOffcanvas, setShowEditOffcanvas] = useState(false);
+  const [showColumnsSettings, setShowColumnsSettings] = useState(false);
+  const [currentItem, setCurrentItem] = useState<FreeCapacityItem | null>(null);
+  const [formLoading, setFormLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState<FreeCapacityCreateData>({
     resource_type_id: 1,
     equipment_type_id: 1,
     org_id: 1,
     coordinates: []
-  })
-  const [resourceTypes, setResourceTypes] = useState<any[]>([])
-  const [equipmentTypes, setEquipmentTypes] = useState<any[]>([])
-  const [organizations, setOrganizations] = useState<any[]>([])
-  const [isResizing, setIsResizing] = useState(false)
-  const tableRef = useRef<HTMLTableElement>(null)
-  const [coordinatesInput, setCoordinatesInput] = useState<string>('')
+  });
+  const [resourceTypes, setResourceTypes] = useState<any[]>([]);
+  const [equipmentTypes, setEquipmentTypes] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [isResizing, setIsResizing] = useState(false);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const [coordinatesInput, setCoordinatesInput] = useState<string>('');
+  const navigate = useNavigate();
 
   useEffect(() => {
-    const savedColumns = localStorage.getItem('freeCapacityColumns')
+    const savedColumns = localStorage.getItem('freeCapacityColumns');
     if (savedColumns) {
       try {
-        const parsedColumns = JSON.parse(savedColumns)
-        setColumns(parsedColumns)
-        setIsTableCustomized(true)
+        const parsedColumns = JSON.parse(savedColumns);
+        setColumns(parsedColumns);
+        setIsTableCustomized(true);
       } catch (e) {
-        console.error('Ошибка при загрузке настроек таблицы:', e)
+        console.error('Ошибка при загрузке настроек таблицы:', e);
       }
     }
-  }, [])
+  }, []);
 
   useEffect(() => {
     if (isTableCustomized) {
-      localStorage.setItem('freeCapacityColumns', JSON.stringify(columns))
+      localStorage.setItem('freeCapacityColumns', JSON.stringify(columns));
     }
-  }, [columns, isTableCustomized])
+  }, [columns, isTableCustomized]);
 
   const handleResizeStart = (e: React.MouseEvent, columnId: string) => {
-    e.preventDefault()
-    e.stopPropagation()
-    if (isResizing) return
-    const column = columns.find(c => c.id === columnId)
-    if (!column) return
-    const startX = e.clientX
-    const startWidth = column.width
+    e.preventDefault();
+    e.stopPropagation();
+    if (isResizing) return;
+    const column = columns.find(c => c.id === columnId);
+    if (!column) return;
+    const startX = e.clientX;
+    const startWidth = column.width;
     const handleMouseMove = (moveEvent: MouseEvent) => {
-      const deltaX = moveEvent.clientX - startX
-      const newWidth = Math.max(50, startWidth + deltaX)
+      const deltaX = moveEvent.clientX - startX;
+      const newWidth = Math.max(50, startWidth + deltaX);
       if (tableRef.current) {
-        const headerCells = tableRef.current.querySelectorAll('th')
-        const dataCells = tableRef.current.querySelectorAll('tbody tr td')
-        const columnIndex = columns.filter(c => c.visible).findIndex(c => c.id === columnId)
+        const headerCells = tableRef.current.querySelectorAll('th');
+        const dataCells = tableRef.current.querySelectorAll('tbody tr td');
+        const columnIndex = columns.filter(c => c.visible).findIndex(c => c.id === columnId);
         if (columnIndex >= 0) {
           if (headerCells[columnIndex]) {
-            (headerCells[columnIndex] as HTMLElement).style.width = `${newWidth}px`
-            ;(headerCells[columnIndex] as HTMLElement).style.minWidth = `${newWidth}px`
+            (headerCells[columnIndex] as HTMLElement).style.width = `${newWidth}px`;
+            (headerCells[columnIndex] as HTMLElement).style.minWidth = `${newWidth}px`;
           }
           for (let i = 0; i < dataCells.length; i++) {
             if ((i % headerCells.length) === columnIndex) {
-              (dataCells[i] as HTMLElement).style.width = `${newWidth}px`
-              ;(dataCells[i] as HTMLElement).style.minWidth = `${newWidth}px`
+              (dataCells[i] as HTMLElement).style.width = `${newWidth}px`;
+              (dataCells[i] as HTMLElement).style.minWidth = `${newWidth}px`;
             }
           }
         }
       }
-    }
+    };
     const handleMouseUp = (upEvent: MouseEvent) => {
-      const deltaX = upEvent.clientX - startX
-      const newWidth = Math.max(50, startWidth + deltaX)
+      const deltaX = upEvent.clientX - startX;
+      const newWidth = Math.max(50, startWidth + deltaX);
       setColumns(prevColumns =>
         prevColumns.map(col =>
           col.id === columnId ? { ...col, width: newWidth } : col
         )
-      )
-      setIsTableCustomized(true)
-      setIsResizing(false)
-      document.removeEventListener('mousemove', handleMouseMove)
-      document.removeEventListener('mouseup', handleMouseUp)
-      document.body.style.cursor = ''
-      document.body.classList.remove('resizing')
-    }
-    setIsResizing(true)
-    document.addEventListener('mousemove', handleMouseMove)
-    document.addEventListener('mouseup', handleMouseUp)
-    document.body.style.cursor = 'col-resize'
-    document.body.classList.add('resizing')
-  }
+      );
+      setIsTableCustomized(true);
+      setIsResizing(false);
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+      document.body.style.cursor = '';
+      document.body.classList.remove('resizing');
+    };
+    setIsResizing(true);
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+    document.body.style.cursor = 'col-resize';
+    document.body.classList.add('resizing');
+  };
 
   const handleColumnVisibilityChange = (columnId: string, visible: boolean) => {
     setColumns(prevColumns =>
@@ -172,9 +174,9 @@ const FreeCapacityList: React.FC = () => {
           ? { ...col, visible }
           : col
       )
-    )
-    setIsTableCustomized(true)
-  }
+    );
+    setIsTableCustomized(true);
+  };
 
   const resetTableSettings = () => {
     const defaultColumns: TableColumn[] = [
@@ -185,128 +187,138 @@ const FreeCapacityList: React.FC = () => {
       { id: 'coordinates', title: 'КОЛИЧЕСТВО ТОЧЕК', width: 150, visible: true, field: 'coordinates' },
       { id: 'created_at', title: 'ДАТА СОЗДАНИЯ', width: 150, visible: true, field: 'created_at' },
       { id: 'actions', title: 'ДЕЙСТВИЯ', width: 130, visible: true, field: 'actions' }
-    ]
-    setColumns(defaultColumns)
-    localStorage.removeItem('freeCapacityColumns')
-    setIsTableCustomized(false)
-    setShowColumnsSettings(false)
-  }
+    ];
+    setColumns(defaultColumns);
+    localStorage.removeItem('freeCapacityColumns');
+    setIsTableCustomized(false);
+    setShowColumnsSettings(false);
+  };
+
+  const handleReturnToDashboard = () => {
+    navigate('/dashboard');
+  };
+
+  const handleRelogin = () => {
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem('user');
+    window.location.href = '/login';
+  };
 
   const loadReferences = async () => {
     try {
-      setFormLoading(true)
-      console.log("Начало загрузки справочников")
+      setFormLoading(true);
+      console.log("Начало загрузки справочников");
       const resourceTypesPromise = getResourceTypes().catch(error => {
-        console.error("Ошибка загрузки типов ресурсов:", error)
-        return []
-      })
+        console.error("Ошибка загрузки типов ресурсов:", error);
+        return [];
+      });
       const equipmentTypesPromise = getEquipmentTypes().catch(error => {
-        console.error("Ошибка загрузки типов оборудования:", error)
-        return []
-      })
+        console.error("Ошибка загрузки типов оборудования:", error);
+        return [];
+      });
       const orgsPromise = getOrganizations().catch(error => {
-        console.error("Ошибка загрузки организаций:", error)
-        return []
-      })
+        console.error("Ошибка загрузки организаций:", error);
+        return [];
+      });
       const [resourceTypesData, equipmentTypesData, orgsData] = await Promise.all([
         resourceTypesPromise,
         equipmentTypesPromise,
         orgsPromise
-      ])
-      setResourceTypes(resourceTypesData)
-      setEquipmentTypes(equipmentTypesData)
-      setOrganizations(orgsData)
+      ]);
+      setResourceTypes(resourceTypesData);
+      setEquipmentTypes(equipmentTypesData);
+      setOrganizations(orgsData);
       setFilterOptions({
         resourceTypes: resourceTypesData,
         equipmentTypes: equipmentTypesData,
         organizations: orgsData
-      })
-      setFormLoading(false)
+      });
+      setFormLoading(false);
       return {
         success: resourceTypesData.length > 0 && equipmentTypesData.length > 0 && orgsData.length > 0,
         resourceTypesData,
         equipmentTypesData,
         orgsData
-      }
+      };
     } catch (error) {
-      console.error("Общая ошибка загрузки справочников:", error)
-      setFormLoading(false)
+      console.error("Общая ошибка загрузки справочников:", error);
+      setFormLoading(false);
       return {
         success: false,
         error: error,
         resourceTypesData: [],
         equipmentTypesData: [],
         orgsData: []
-      }
+      };
     }
-  }
+  };
 
   const sortData = (data: FreeCapacityItem[]): FreeCapacityItem[] => {
     return [...data].sort((a, b) => {
       if (sortField === 'resource') {
-        const aValue = a.resource?.name || ''
-        const bValue = b.resource?.name || ''
+        const aValue = a.resource?.name || '';
+        const bValue = b.resource?.name || '';
         return sortDirection === 'asc'
           ? aValue.localeCompare(bValue, 'ru')
-          : bValue.localeCompare(aValue, 'ru')
+          : bValue.localeCompare(aValue, 'ru');
       }
       if (sortField === 'equipment') {
-        const aValue = a.equipment?.name || ''
-        const bValue = b.equipment?.name || ''
+        const aValue = a.equipment?.name || '';
+        const bValue = b.equipment?.name || '';
         return sortDirection === 'asc'
           ? aValue.localeCompare(bValue, 'ru')
-          : bValue.localeCompare(aValue, 'ru')
+          : bValue.localeCompare(aValue, 'ru');
       }
       if (sortField === 'org') {
-        const aValue = a.org?.shortName || ''
-        const bValue = b.org?.shortName || ''
+        const aValue = a.org?.shortName || '';
+        const bValue = b.org?.shortName || '';
         return sortDirection === 'asc'
           ? aValue.localeCompare(bValue, 'ru')
-          : bValue.localeCompare(aValue, 'ru')
+          : bValue.localeCompare(aValue, 'ru');
       }
       if (sortField === 'coordinates') {
-        const aValue = a.coordinates ? a.coordinates.length : 0
-        const bValue = b.coordinates ? b.coordinates.length : 0
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
+        const aValue = a.coordinates ? a.coordinates.length : 0;
+        const bValue = b.coordinates ? b.coordinates.length : 0;
+        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
       }
-      let aValue = a[sortField as keyof FreeCapacityItem]
-      let bValue = b[sortField as keyof FreeCapacityItem]
-      if (typeof aValue === 'number' && typeof bValue === 'number') {
-        return sortDirection === 'asc' ? aValue - bValue : bValue - aValue
+      
+      const aField = a[sortField as keyof FreeCapacityItem];
+      const bField = b[sortField as keyof FreeCapacityItem];
+      
+      if (typeof aField === 'number' && typeof bField === 'number') {
+        return sortDirection === 'asc' ? aField - bField : bField - aField;
       }
-      const aStr = String(aValue || '').toLowerCase()
-      const bStr = String(bValue || '').toLowerCase()
+      
+      const aStr = String(aField || '').toLowerCase();
+      const bStr = String(bField || '').toLowerCase();
       return sortDirection === 'asc'
         ? aStr.localeCompare(bStr, 'ru')
-        : bStr.localeCompare(aStr, 'ru')
-    })
-  }
+        : bStr.localeCompare(aStr, 'ru');
+    });
+  };
 
   const handleSort = (field: string) => {
-    if (isResizing) return
+    if (isResizing) return;
     if (field === sortField) {
-      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc')
+      setSortDirection(prev => prev === 'asc' ? 'desc' : 'asc');
     } else {
-      setSortField(field)
-      setSortDirection('asc')
+      setSortField(field);
+      setSortDirection('asc');
     }
-  }
+  };
 
   const loadData = async (page = 1) => {
-    setState(prev => ({ ...prev, loading: true, error: null, success: '' }))
-    if (apiRetryCount >= MAX_API_RETRY_ATTEMPTS && !apiSuccessful) {
-      setState(prev => ({
-        ...prev,
-        error: `Не удалось загрузить данные после ${MAX_API_RETRY_ATTEMPTS} попыток. Пожалуйста, попробуйте позже.`,
-        loading: false,
-        success: ''
-      }))
-      return
-    }
+    setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
+    
     try {
-      const filters: FreeCapacityParams = { ...activeFilters }
-      const data = await getFreeCapacityList(page, filters)
-      setApiSuccessful(true)
+      // Проверяем авторизацию
+      await initializeApi();
+      
+      // Загружаем данные
+      const filters: FreeCapacityParams = { ...activeFilters };
+      const data = await getFreeCapacityList(page, filters);
+      
+      setApiSuccessful(true);
       setState(prev => ({
         ...prev,
         items: data.items,
@@ -316,117 +328,100 @@ const FreeCapacityList: React.FC = () => {
         loading: false,
         error: null,
         success: 'success'
-      }))
+      }));
     } catch (error) {
-      console.error('Ошибка загрузки свободных мощностей:', error)
-      const errorMsg = String(error)
-      if (errorMsg.includes('авторизац') || errorMsg.includes('Unauthorized') || errorMsg.includes('Unauthenticated')) {
-        setAuthError(true)
+      console.error('Ошибка загрузки свободных мощностей:', error);
+      const errorMsg = String(error);
+      
+      if (errorMsg.includes('авторизац') || 
+          errorMsg.includes('Unauthorized') || 
+          errorMsg.includes('Unauthenticated') || 
+          errorMsg.includes('токен')) {
+        setAuthError(true);
         setState(prev => ({
           ...prev,
-          error: 'Ошибка авторизации. Пожалуйста, обновите страницу или войдите в систему заново.',
+          error: 'У вас нет прав доступа к странице свободных мощностей. Обратитесь к администратору системы.',
           loading: false,
           success: ''
-        }))
+        }));
       } else {
-        setApiRetryCount(prev => prev + 1)
+        setApiRetryCount(prev => prev + 1);
         setState(prev => ({
           ...prev,
-          error: `Ошибка при получении данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
+          error: `Ошибка при получении данных: ${errorMsg}`,
           loading: false,
           success: ''
-        }))
+        }));
       }
     }
-  }
-
-  const handleReauth = async () => {
-    try {
-      setAuthError(false)
-      setState(prev => ({ ...prev, loading: true, error: null, success: '' }))
-      localStorage.removeItem('auth_token')
-      await initializeApi()
-      setApiRetryCount(0)
-      setApiSuccessful(false)
-      await loadData()
-    } catch (error) {
-      console.error('Ошибка переавторизации:', error)
-      setAuthError(true)
-      setState(prev => ({
-        ...prev,
-        error: 'Не удалось авторизоваться. Пожалуйста, обновите страницу или обратитесь к администратору.',
-        loading: false,
-        success: ''
-      }))
-    }
-  }
+  };
 
   const handleRefreshData = async () => {
     try {
-      setState(prev => ({ ...prev, loading: true, error: null, success: '' }))
-      setApiRetryCount(0)
-      setApiSuccessful(false)
+      setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
+      setApiRetryCount(0);
+      setApiSuccessful(false);
       setActiveFilters({
         resource_type_id: undefined,
         equipment_type_id: undefined,
         org_id: undefined
-      })
-      await loadData()
+      });
+      await loadData();
     } catch (error) {
-      console.error('Ошибка обновления данных:', error)
+      console.error('Ошибка обновления данных:', error);
       setState(prev => ({
         ...prev,
         error: 'Ошибка при обновлении данных. Пожалуйста, попробуйте позже.',
         loading: false,
         success: ''
-      }))
+      }));
     }
-  }
+  };
 
   const applyFilters = async () => {
-    setState(prev => ({ ...prev, loading: true, error: null, success: '' }))
+    setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
     try {
-      await loadData(1)
+      await loadData(1);
     } catch (error) {
-      console.error('Ошибка фильтрации:', error)
-      setApiRetryCount(prev => prev + 1)
+      console.error('Ошибка фильтрации:', error);
+      setApiRetryCount(prev => prev + 1);
       setState(prev => ({
         ...prev,
         error: `Ошибка при фильтрации данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
         loading: false,
         success: ''
-      }))
+      }));
     }
-  }
+  };
 
   const handleFilterChange = (filterType: keyof FreeCapacityParams, value: string) => {
     setActiveFilters(prev => ({
       ...prev,
       [filterType]: value ? parseInt(value, 10) : undefined
-    }))
-  }
+    }));
+  };
 
   const resetFilters = () => {
     setActiveFilters({
       resource_type_id: undefined,
       equipment_type_id: undefined,
       org_id: undefined
-    })
-    loadData()
-  }
+    });
+    loadData();
+  };
 
   const handleSearch = async () => {
     if (!searchInput.trim()) {
-      return loadData()
+      return loadData();
     }
-    setState(prev => ({ ...prev, loading: true, error: null, searchQuery: searchInput, success: '' }))
+    setState(prev => ({ ...prev, loading: true, error: null, searchQuery: searchInput, success: '' }));
     try {
       const filters: FreeCapacityParams = {
         ...activeFilters,
         name: searchInput
-      }
-      const data = await getFreeCapacityList(1, filters)
-      setApiSuccessful(true)
+      };
+      const data = await getFreeCapacityList(1, filters);
+      setApiSuccessful(true);
       setState(prev => ({
         ...prev,
         items: data.items,
@@ -436,74 +431,74 @@ const FreeCapacityList: React.FC = () => {
         loading: false,
         error: null,
         success: 'success'
-      }))
+      }));
     } catch (error) {
-      console.error('Ошибка поиска:', error)
-      setApiRetryCount(prev => prev + 1)
+      console.error('Ошибка поиска:', error);
+      setApiRetryCount(prev => prev + 1);
       setState(prev => ({
         ...prev,
         error: `Ошибка при поиске данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
         loading: false,
         success: ''
-      }))
+      }));
     }
-  }
+  };
 
   const handleViewDetails = async (id: number) => {
     try {
-      setFormLoading(true)
-      const details = await getFreeCapacityById(id)
-      setCurrentItem(details)
-      setFormLoading(false)
-      setShowDetailsModal(true)
+      setFormLoading(true);
+      const details = await getFreeCapacityById(id);
+      setCurrentItem(details);
+      setFormLoading(false);
+      setShowDetailsModal(true);
     } catch (error) {
-      console.error('Ошибка получения деталей:', error)
-      setFormLoading(false)
+      console.error('Ошибка получения деталей:', error);
+      setFormLoading(false);
     }
-  }
+  };
 
   const handleEditRecord = async (id: number) => {
     try {
-      setFormError(null)
-      setFormLoading(true)
+      setFormError(null);
+      setFormLoading(true);
       if (resourceTypes.length === 0) {
-        await loadReferences()
+        await loadReferences();
       }
-      const details = await getFreeCapacityById(id)
-      setCurrentItem(details)
+      const details = await getFreeCapacityById(id);
+      setCurrentItem(details);
       setFormData({
         resource_type_id: details.resource_type_id || details.resource?.id || 1,
         equipment_type_id: details.equipment_type_id || details.equipment?.id || 1,
         org_id: details.org_id || details.org?.id || 1,
         coordinates: details.coordinates || []
-      })
+      });
       setCoordinatesInput(
         details.coordinates
           .map(coord => `[${coord[0]}, ${coord[1]}]`)
           .join(',\n')
-      )
-      setFormLoading(false)
-      setShowEditOffcanvas(true)
+      );
+      setFormLoading(false);
+      setShowEditOffcanvas(true);
     } catch (error) {
-      console.error('Ошибка получения данных для редактирования:', error)
-      setFormLoading(false)
-      setFormError('Не удалось загрузить данные для редактирования')
+      console.error('Ошибка получения данных для редактирования:', error);
+      setFormLoading(false);
+      setFormError('Не удалось загрузить данные для редактирования');
     }
-  }
+  };
 
   const handleAddNew = async () => {
-    setFormError(null)
-    setCurrentItem(null)
-    setFormLoading(true)
-    let referencesLoaded = true
+    setFormError(null);
+    setCurrentItem(null);
+    setFormLoading(true);
+    let referencesLoaded = true;
     if (resourceTypes.length === 0 || equipmentTypes.length === 0 || organizations.length === 0) {
-      const result = await loadReferences()
-      referencesLoaded = result.success
+      const result = await loadReferences();
+      referencesLoaded = result.success;
       if (!referencesLoaded) {
-        setFormError('Не удалось загрузить необходимые справочники. Попробуйте обновить страницу.')
-        setFormLoading(false)
-        setShowEditOffcanvas(true)
-        return
+        setFormError('Не удалось загрузить необходимые справочники. Попробуйте обновить страницу.');
+        setFormLoading(false);
+        setShowEditOffcanvas(true);
+        return;
       }
     }
     setFormData({
@@ -516,177 +511,177 @@ const FreeCapacityList: React.FC = () => {
         [51.686900, 39.183902],
         [51.688609, 39.200649]
       ]
-    })
+    });
     setCoordinatesInput(
       `[51.695280, 39.182930],
 [51.695884, 39.196807],
 [51.686900, 39.183902],
 [51.688609, 39.200649]`
-    )
-    setFormLoading(false)
-    setShowEditOffcanvas(true)
-  }
+    );
+    setFormLoading(false);
+    setShowEditOffcanvas(true);
+  };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target
+    const { name, value } = e.target;
     if (name === 'coordinates') {
-      setCoordinatesInput(value)
-      return
+      setCoordinatesInput(value);
+      return;
     }
-    const numericFields = ['resource_type_id', 'equipment_type_id', 'org_id']
+    const numericFields = ['resource_type_id', 'equipment_type_id', 'org_id'];
     setFormData(prev => ({
       ...prev,
       [name]: numericFields.includes(name) ? (parseInt(value, 10) || 0) : value
-    }))
-  }
+    }));
+  };
 
   const parseCoordinates = (input: string): [number, number][] => {
     try {
-      const cleanedInput = input.replace(/\s/g, '')
-      const regex = /\[(\d+\.\d+),(\d+\.\d+)\]/g
-      const matches = cleanedInput.matchAll(regex)
-      const coordinates: [number, number][] = []
+      const cleanedInput = input.replace(/\s/g, '');
+      const regex = /\[(\d+\.\d+),(\d+\.\d+)\]/g;
+      const matches = cleanedInput.matchAll(regex);
+      const coordinates: [number, number][] = [];
       for (const match of matches) {
-        const lat = parseFloat(match[1])
-        const lng = parseFloat(match[2])
+        const lat = parseFloat(match[1]);
+        const lng = parseFloat(match[2]);
         if (!isNaN(lat) && !isNaN(lng)) {
-          coordinates.push([lat, lng])
+          coordinates.push([lat, lng]);
         }
       }
-      return coordinates
+      return coordinates;
     } catch (error) {
-      console.error('Ошибка парсинга координат:', error)
-      return []
+      console.error('Ошибка парсинга координат:', error);
+      return [];
     }
-  }
+  };
 
   const handleSaveForm = async (e: React.FormEvent) => {
-    e.preventDefault()
+    e.preventDefault();
     try {
-      setFormError(null)
-      setFormLoading(true)
-      const parsedCoordinates = parseCoordinates(coordinatesInput)
+      setFormError(null);
+      setFormLoading(true);
+      const parsedCoordinates = parseCoordinates(coordinatesInput);
       if (parsedCoordinates.length < 4) {
-        setFormError('Необходимо указать минимум 4 координаты для формирования области')
-        setFormLoading(false)
-        return
+        setFormError('Необходимо указать минимум 4 координаты для формирования области');
+        setFormLoading(false);
+        return;
       }
       const dataToSend: FreeCapacityCreateData = {
         ...formData,
         coordinates: parsedCoordinates
-      }
-      console.log('Отправляемые данные:', dataToSend)
-      let response
+      };
+      console.log('Отправляемые данные:', dataToSend);
+      let response;
       if (currentItem) {
-        response = await updateFreeCapacity(currentItem.id, dataToSend)
+        response = await updateFreeCapacity(currentItem.id, dataToSend);
       } else {
-        response = await createFreeCapacity(dataToSend)
+        response = await createFreeCapacity(dataToSend);
       }
-      console.log('Ответ API:', response)
-      setFormLoading(false)
-      setShowEditOffcanvas(false)
-      await loadData(state.currentPage)
+      console.log('Ответ API:', response);
+      setFormLoading(false);
+      setShowEditOffcanvas(false);
+      await loadData(state.currentPage);
       setState(prev => ({
         ...prev,
         success: currentItem ? 'Запись успешно обновлена' : 'Запись успешно создана'
-      }))
+      }));
     } catch (error) {
-      console.error('Ошибка сохранения данных:', error)
-      setFormLoading(false)
-      let errorMessage = 'Ошибка сохранения данных: '
+      console.error('Ошибка сохранения данных:', error);
+      setFormLoading(false);
+      let errorMessage = 'Ошибка сохранения данных: ';
       if (error instanceof Error) {
-        errorMessage += error.message
+        errorMessage += error.message;
         if ((error as any).response && (error as any).response.data) {
           try {
             const errorData = typeof (error as any).response.data === 'string'
               ? JSON.parse((error as any).response.data)
-              : (error as any).response.data
+              : (error as any).response.data;
             if (errorData.errors) {
               const fieldErrors = Object.values(errorData.errors)
                 .flat()
-                .join(', ')
-              errorMessage += `: ${fieldErrors}`
+                .join(', ');
+              errorMessage += `: ${fieldErrors}`;
             } else if (errorData.message) {
-              errorMessage += `: ${errorData.message}`
+              errorMessage += `: ${errorData.message}`;
             }
           } catch (e) {}
         }
       } else {
-        errorMessage += String(error)
+        errorMessage += String(error);
       }
-      setFormError(errorMessage)
+      setFormError(errorMessage);
     }
-  }
+  };
 
   const handleDeletePrompt = (item: FreeCapacityItem) => {
-    setCurrentItem(item)
-    setShowDeleteModal(true)
-  }
+    setCurrentItem(item);
+    setShowDeleteModal(true);
+  };
 
   const handleDeleteConfirm = async () => {
-    if (!currentItem) return
+    if (!currentItem) return;
     try {
-      setFormLoading(true)
-      await deleteFreeCapacity(currentItem.id)
-      setFormLoading(false)
-      setShowDeleteModal(false)
-      await loadData(state.currentPage)
+      setFormLoading(true);
+      await deleteFreeCapacity(currentItem.id);
+      setFormLoading(false);
+      setShowDeleteModal(false);
+      await loadData(state.currentPage);
       setState(prev => ({
         ...prev,
         success: 'Запись успешно удалена'
-      }))
+      }));
     } catch (error) {
-      console.error('Ошибка удаления:', error)
-      setFormLoading(false)
-      setFormError('Ошибка удаления записи: ' + String(error))
+      console.error('Ошибка удаления:', error);
+      setFormLoading(false);
+      setFormError('Ошибка удаления записи: ' + String(error));
     }
-  }
+  };
 
   const handlePageChange = (page: number) => {
-    loadData(page)
-  }
+    loadData(page);
+  };
 
   useEffect(() => {
     const initialize = async () => {
       try {
-        setState(prev => ({ ...prev, loading: true, error: null, success: '' }))
-        await initializeApi()
-        await loadReferences()
-        await loadData()
+        setState(prev => ({ ...prev, loading: true, error: null, success: '' }));
+        await initializeApi();
+        await loadReferences();
+        await loadData();
       } catch (error) {
-        console.error('Ошибка инициализации:', error)
+        console.error('Ошибка инициализации:', error);
         if (String(error).includes('авторизац') || String(error).includes('Unauthorized') || String(error).includes('Unauthenticated')) {
-          setAuthError(true)
+          setAuthError(true);
           setState(prev => ({
             ...prev,
-            error: 'Ошибка авторизации. Пожалуйста, обновите страницу или войдите в систему заново.',
+            error: 'У вас нет прав доступа к странице свободных мощностей. Обратитесь к администратору системы.',
             loading: false,
             success: ''
-          }))
+          }));
         } else {
-          setApiRetryCount(prev => prev + 1)
+          setApiRetryCount(prev => prev + 1);
           setState(prev => ({
             ...prev,
             error: `Проблема с получением данных. Попытка ${apiRetryCount + 1}/${MAX_API_RETRY_ATTEMPTS}`,
             loading: false,
             success: ''
-          }))
+          }));
         }
       }
-    }
-    initialize()
-  }, [])
+    };
+    initialize();
+  }, []);
 
   useEffect(() => {
     return () => {
-      document.body.style.cursor = ''
-      document.body.classList.remove('resizing')
-    }
-  }, [])
+      document.body.style.cursor = '';
+      document.body.classList.remove('resizing');
+    };
+  }, []);
 
   const renderPagination = () => {
-    if (state.totalPages <= 1) return null
-    const items = []
+    if (state.totalPages <= 1) return null;
+    const items = [];
     for (let i = 1; i <= state.totalPages; i++) {
       items.push(
         <Pagination.Item
@@ -696,7 +691,7 @@ const FreeCapacityList: React.FC = () => {
         >
           {i}
         </Pagination.Item>
-      )
+      );
     }
     return (
       <Pagination className="mt-3 justify-content-center">
@@ -706,32 +701,32 @@ const FreeCapacityList: React.FC = () => {
         <Pagination.Next onClick={() => handlePageChange(state.currentPage + 1)} disabled={state.currentPage === state.totalPages} />
         <Pagination.Last onClick={() => handlePageChange(state.totalPages)} disabled={state.currentPage === state.totalPages} />
       </Pagination>
-    )
-  }
+    );
+  };
 
   const getSortedData = () => {
-    return sortData(state.items)
-  }
+    return sortData(state.items);
+  };
 
   const renderSortIcon = (field: string) => {
     if (field !== sortField) {
-      return <i className="ti ti-sort ms-1"></i>
+      return <i className="ti ti-sort ms-1"></i>;
     }
     return sortDirection === 'asc'
       ? <i className="ti ti-sort-ascending ms-1"></i>
-      : <i className="ti ti-sort-descending ms-1"></i>
-  }
+      : <i className="ti ti-sort-descending ms-1"></i>;
+  };
 
   const renderTableHeaders = () => {
     return columns
       .filter(column => column.visible)
       .map((column, index, filteredColumns) => {
-        const isLast = index === filteredColumns.length - 1
+        const isLast = index === filteredColumns.length - 1;
         const style = {
           width: `${column.width}px`,
           minWidth: `${column.width}px`,
           position: 'relative' as 'relative'
-        }
+        };
         return (
           <th
             key={column.id}
@@ -750,9 +745,9 @@ const FreeCapacityList: React.FC = () => {
               />
             )}
           </th>
-        )
-      })
-  }
+        );
+      });
+  };
 
   const renderTableRow = (item: FreeCapacityItem) => {
     return columns
@@ -761,7 +756,7 @@ const FreeCapacityList: React.FC = () => {
         const style = {
           width: `${column.width}px`,
           minWidth: `${column.width}px`
-        }
+        };
         if (column.id === 'actions') {
           return (
             <td
@@ -797,7 +792,7 @@ const FreeCapacityList: React.FC = () => {
                 ></i>
               </OverlayTrigger>
             </td>
-          )
+          );
         }
         if (column.id === 'resource') {
           return (
@@ -807,7 +802,7 @@ const FreeCapacityList: React.FC = () => {
             >
               {item.resource?.name || 'Не указано'}
             </td>
-          )
+          );
         }
         if (column.id === 'equipment') {
           return (
@@ -817,7 +812,7 @@ const FreeCapacityList: React.FC = () => {
             >
               {item.equipment?.name || 'Не указано'}
             </td>
-          )
+          );
         }
         if (column.id === 'org') {
           return (
@@ -827,7 +822,7 @@ const FreeCapacityList: React.FC = () => {
             >
               {item.org?.shortName || item.org?.fullName || 'Не указано'}
             </td>
-          )
+          );
         }
         if (column.id === 'coordinates') {
           return (
@@ -837,7 +832,7 @@ const FreeCapacityList: React.FC = () => {
             >
               {item.coordinates ? item.coordinates.length : 0} точек
             </td>
-          )
+          );
         }
         if (column.id === 'created_at') {
           return (
@@ -847,10 +842,10 @@ const FreeCapacityList: React.FC = () => {
             >
               {new Date(item.created_at).toLocaleDateString()}
             </td>
-          )
+          );
         }
-        const fieldKey = column.field as keyof FreeCapacityItem
-        const value = item[fieldKey]
+        const fieldKey = column.field as keyof FreeCapacityItem;
+        const value = item[fieldKey];
         return (
           <td
             key={`${item.id}-${column.id}`}
@@ -858,9 +853,9 @@ const FreeCapacityList: React.FC = () => {
           >
             {typeof value === 'object' ? JSON.stringify(value) : (value || '')}
           </td>
-        )
-      })
-  }
+        );
+      });
+  };
 
   return (
     <React.Fragment>
@@ -888,13 +883,25 @@ const FreeCapacityList: React.FC = () => {
             <Card.Body>
               {authError && (
                 <Alert variant="danger">
-                  <Alert.Heading>Ошибка авторизации</Alert.Heading>
-                  <p>Не удалось подключиться к серверу или произошла ошибка авторизации.</p>
-                  <Button variant="danger" onClick={handleReauth}>
-                    Попробовать снова
-                  </Button>
+                  <Alert.Heading>У вас нет прав доступа к странице свободных мощностей</Alert.Heading>
+                  <p>Обратитесь к администратору системы для получения необходимых прав.</p>
+                  <div className="d-flex gap-2">
+                    <Button 
+                      variant="outline-primary" 
+                      onClick={handleReturnToDashboard}
+                    >
+                      <i className="ti ti-home me-1"></i> Вернуться на главную
+                    </Button>
+                    <Button 
+                      variant="outline-secondary" 
+                      onClick={handleRelogin}
+                    >
+                      <i className="ti ti-logout me-1"></i> Выйти и войти снова
+                    </Button>
+                  </div>
                 </Alert>
               )}
+              
               {state.error && !authError && (
                 <Alert variant="danger" onClose={() => setState(prev => ({ ...prev, error: null }))} dismissible>
                   {state.error}
@@ -905,174 +912,181 @@ const FreeCapacityList: React.FC = () => {
                   </div>
                 </Alert>
               )}
+              
               {state.success && state.success !== 'success' && (
                 <Alert variant="success" onClose={() => setState(prev => ({ ...prev, success: 'success' }))} dismissible>
                   {state.success}
                 </Alert>
               )}
-              <Row className="justify-content-between mb-3 g-3">
-                <Col sm="auto">
-                  <div className="form-search">
-                    <i className="ph-duotone ph-magnifying-glass icon-search"></i>
-                    <InputGroup>
-                      <Form.Control
-                        type="search"
-                        placeholder="Поиск..."
-                        value={searchInput}
-                        onChange={(e) => setSearchInput(e.target.value)}
-                        onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
-                      />
-                      <Button
-                        variant="light-secondary"
-                        onClick={handleSearch}
-                        disabled={state.loading || authError}
-                      >
-                        Найти
-                      </Button>
-                    </InputGroup>
-                  </div>
-                </Col>
-                <Col sm="auto">
-                  <div className="d-flex gap-2 align-items-center">
-                    <Dropdown className="mini-filter">
-                      <Dropdown.Toggle variant="light" size="sm" className="mini-filter-button">
-                        <i className="ti ti-filter me-1"></i>
-                        Фильтр {(activeFilters.resource_type_id || activeFilters.equipment_type_id || activeFilters.org_id) && <span className="filter-indicator"></span>}
-                      </Dropdown.Toggle>
-                      <Dropdown.Menu className="mini-filter-menu">
-                        <div className="filter-content p-2">
-                          <Form.Group className="mb-3">
-                            <Form.Label className="mini-filter-label">Тип ресурса</Form.Label>
-                            <Form.Select
-                              size="sm"
-                              value={activeFilters.resource_type_id || ''}
-                              onChange={(e) => handleFilterChange('resource_type_id', e.target.value)}
-                              disabled={state.loading || authError}
-                            >
-                              <option value="">Все типы</option>
-                              {filterOptions.resourceTypes.map(type => (
-                                <option key={type.id} value={type.id}>
-                                  {type.name}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </Form.Group>
-                          <Form.Group className="mb-3">
-                            <Form.Label className="mini-filter-label">Тип оборудования</Form.Label>
-                            <Form.Select
-                              size="sm"
-                              value={activeFilters.equipment_type_id || ''}
-                              onChange={(e) => handleFilterChange('equipment_type_id', e.target.value)}
-                              disabled={state.loading || authError}
-                            >
-                              <option value="">Все типы</option>
-                              {filterOptions.equipmentTypes.map(type => (
-                                <option key={type.id} value={type.id}>
-                                  {type.name}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </Form.Group>
-                          <Form.Group className="mb-3">
-                            <Form.Label className="mini-filter-label">Организация</Form.Label>
-                            <Form.Select
-                              size="sm"
-                              value={activeFilters.org_id || ''}
-                              onChange={(e) => handleFilterChange('org_id', e.target.value)}
-                              disabled={state.loading || authError}
-                            >
-                              <option value="">Все организации</option>
-                              {filterOptions.organizations.map(org => (
-                                <option key={org.id} value={org.id}>
-                                  {org.shortName || org.fullName}
-                                </option>
-                              ))}
-                            </Form.Select>
-                          </Form.Group>
-                          <div className="d-flex justify-content-between">
-                            <Button
-                              variant="outline-secondary"
-                              size="sm"
-                              onClick={resetFilters}
-                              disabled={state.loading || authError || (!activeFilters.resource_type_id && !activeFilters.equipment_type_id && !activeFilters.org_id)}
-                            >
-                              Сбросить
-                            </Button>
-                            <Button
-                              variant="primary"
-                              size="sm"
-                              onClick={() => {
-                                applyFilters()
-                                document.body.click()
-                              }}
-                              disabled={state.loading || authError}
-                            >
-                              Применить
-                            </Button>
-                          </div>
-                        </div>
-                      </Dropdown.Menu>
-                    </Dropdown>
-                    <Button
-                      variant="light-secondary"
-                      onClick={() => setShowColumnsSettings(true)}
-                      title="Настройки таблицы"
-                    >
-                      <i className="ti ti-table-options me-1"></i>
-                      Настройки
-                    </Button>
-                    <Button
-                      variant="primary"
-                      onClick={handleAddNew}
-                      disabled={state.loading || authError}
-                      title="Добавить новую запись"
-                    >
-                      <i className="ph-duotone ph-plus me-1"></i>
-                      ДОБАВИТЬ
-                    </Button>
-                  </div>
-                </Col>
-              </Row>
-              <div className="table-responsive">
-                {state.loading ? (
-                  <div className="text-center py-5">
-                    <Spinner animation="border" role="status">
-                      <span className="visually-hidden">Загрузка...</span>
-                    </Spinner>
-                    <p className="mt-2">Загрузка данных...</p>
-                  </div>
-                ) : (
-                  <>
-                    {state.items.length === 0 ? (
+              
+              {!authError && (
+                <>
+                  <Row className="justify-content-between mb-3 g-3">
+                    <Col sm="auto">
+                      <div className="form-search">
+                        <i className="ph-duotone ph-magnifying-glass icon-search"></i>
+                        <InputGroup>
+                          <Form.Control
+                            type="search"
+                            placeholder="Поиск..."
+                            value={searchInput}
+                            onChange={(e) => setSearchInput(e.target.value)}
+                            onKeyPress={(e) => e.key === 'Enter' && handleSearch()}
+                          />
+                          <Button
+                            variant="light-secondary"
+                            onClick={handleSearch}
+                            disabled={state.loading || authError}
+                          >
+                            Найти
+                          </Button>
+                        </InputGroup>
+                      </div>
+                    </Col>
+                    <Col sm="auto">
+                      <div className="d-flex gap-2 align-items-center">
+                        <Dropdown className="mini-filter">
+                          <Dropdown.Toggle variant="light" size="sm" className="mini-filter-button">
+                            <i className="ti ti-filter me-1"></i>
+                            Фильтр {(activeFilters.resource_type_id || activeFilters.equipment_type_id || activeFilters.org_id) && <span className="filter-indicator"></span>}
+                          </Dropdown.Toggle>
+                          <Dropdown.Menu className="mini-filter-menu">
+                            <div className="filter-content p-2">
+                              <Form.Group className="mb-3">
+                                <Form.Label className="mini-filter-label">Тип ресурса</Form.Label>
+                                <Form.Select
+                                  size="sm"
+                                  value={activeFilters.resource_type_id || ''}
+                                  onChange={(e) => handleFilterChange('resource_type_id', e.target.value)}
+                                  disabled={state.loading || authError}
+                                >
+                                  <option value="">Все типы</option>
+                                  {filterOptions.resourceTypes.map(type => (
+                                    <option key={type.id} value={type.id}>
+                                      {type.name}
+                                    </option>
+                                  ))}
+                                </Form.Select>
+                              </Form.Group>
+                              <Form.Group className="mb-3">
+                                <Form.Label className="mini-filter-label">Тип оборудования</Form.Label>
+                                <Form.Select
+                                  size="sm"
+                                  value={activeFilters.equipment_type_id || ''}
+                                  onChange={(e) => handleFilterChange('equipment_type_id', e.target.value)}
+                                  disabled={state.loading || authError}
+                                >
+                                  <option value="">Все типы</option>
+                                  {filterOptions.equipmentTypes.map(type => (
+                                    <option key={type.id} value={type.id}>
+                                      {type.name}
+                                    </option>
+                                  ))}
+                                </Form.Select>
+                              </Form.Group>
+                              <Form.Group className="mb-3">
+                                <Form.Label className="mini-filter-label">Организация</Form.Label>
+                                <Form.Select
+                                  size="sm"
+                                  value={activeFilters.org_id || ''}
+                                  onChange={(e) => handleFilterChange('org_id', e.target.value)}
+                                  disabled={state.loading || authError}
+                                >
+                                  <option value="">Все организации</option>
+                                  {filterOptions.organizations.map(org => (
+                                    <option key={org.id} value={org.id}>
+                                      {org.shortName || org.fullName}
+                                    </option>
+                                  ))}
+                                </Form.Select>
+                              </Form.Group>
+                              <div className="d-flex justify-content-between">
+                                <Button
+                                  variant="outline-secondary"
+                                  size="sm"
+                                  onClick={resetFilters}
+                                  disabled={state.loading || authError || (!activeFilters.resource_type_id && !activeFilters.equipment_type_id && !activeFilters.org_id)}
+                                >
+                                  Сбросить
+                                </Button>
+                                <Button
+                                  variant="primary"
+                                  size="sm"
+                                  onClick={() => {
+                                    applyFilters();
+                                    document.body.click();
+                                  }}
+                                  disabled={state.loading || authError}
+                                >
+                                  Применить
+                                </Button>
+                              </div>
+                            </div>
+                          </Dropdown.Menu>
+                        </Dropdown>
+                        <Button
+                          variant="light-secondary"
+                          onClick={() => setShowColumnsSettings(true)}
+                          title="Настройки таблицы"
+                        >
+                          <i className="ti ti-table-options me-1"></i>
+                          Настройки
+                        </Button>
+                        <Button
+                          variant="primary"
+                          onClick={handleAddNew}
+                          disabled={state.loading || authError}
+                          title="Добавить новую запись"
+                        >
+                          <i className="ph-duotone ph-plus me-1"></i>
+                          ДОБАВИТЬ
+                        </Button>
+                      </div>
+                    </Col>
+                  </Row>
+                  <div className="table-responsive">
+                    {state.loading ? (
                       <div className="text-center py-5">
-                        <p className="mb-0">Нет данных для отображения</p>
+                        <Spinner animation="border" role="status">
+                          <span className="visually-hidden">Загрузка...</span>
+                        </Spinner>
+                        <p className="mt-2">Загрузка данных...</p>
                       </div>
                     ) : (
                       <>
-                        <table className="table table-hover resizable-table" ref={tableRef}>
-                          <thead>
-                            <tr>
-                              {renderTableHeaders()}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {getSortedData().map((item: FreeCapacityItem) => (
-                              <tr key={item.id}>
-                                {renderTableRow(item)}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                        {renderPagination()}
+                        {state.items.length === 0 ? (
+                          <div className="text-center py-5">
+                            <p className="mb-0">Нет данных для отображения</p>
+                          </div>
+                        ) : (
+                          <>
+                            <table className="table table-hover resizable-table" ref={tableRef}>
+                              <thead>
+                                <tr>
+                                  {renderTableHeaders()}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {getSortedData().map((item: FreeCapacityItem) => (
+                                  <tr key={item.id}>
+                                    {renderTableRow(item)}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            {renderPagination()}
+                          </>
+                        )}
                       </>
                     )}
-                  </>
-                )}
-              </div>
+                  </div>
+                </>
+              )}
             </Card.Body>
           </Card>
         </Col>
       </Row>
+      
       <Offcanvas
         show={showColumnsSettings}
         onHide={() => setShowColumnsSettings(false)}
@@ -1111,6 +1125,7 @@ const FreeCapacityList: React.FC = () => {
           </div>
         </Offcanvas.Body>
       </Offcanvas>
+      
       <Offcanvas
         show={showDetailsModal}
         onHide={() => setShowDetailsModal(false)}
@@ -1221,12 +1236,13 @@ const FreeCapacityList: React.FC = () => {
           )}
         </Offcanvas.Body>
       </Offcanvas>
+      
       <Offcanvas
         show={showEditOffcanvas}
         onHide={() => {
-          setShowEditOffcanvas(false)
-          setFormError(null)
-          setCurrentItem(null)
+          setShowEditOffcanvas(false);
+          setFormError(null);
+          setCurrentItem(null);
         }}
         placement="end"
       >
@@ -1340,9 +1356,9 @@ const FreeCapacityList: React.FC = () => {
                   variant="link-danger"
                   className="btn-pc-default"
                   onClick={() => {
-                    setShowEditOffcanvas(false)
-                    setFormError(null)
-                    setCurrentItem(null)
+                    setShowEditOffcanvas(false);
+                    setFormError(null);
+                    setCurrentItem(null);
                   }}
                   disabled={formLoading}
                 >
@@ -1379,6 +1395,7 @@ const FreeCapacityList: React.FC = () => {
           </Offcanvas.Body>
         </Form>
       </Offcanvas>
+      
       <DeleteModal
         show={showDeleteModal}
         handleClose={() => setShowDeleteModal(false)}
@@ -1388,6 +1405,7 @@ const FreeCapacityList: React.FC = () => {
         btnText="Удалить"
         loading={formLoading}
       />
+      
       <style>{`
         .cursor-pointer {
           cursor: pointer;
@@ -1529,7 +1547,7 @@ const FreeCapacityList: React.FC = () => {
         }
       `}</style>
     </React.Fragment>
-  )
-}
+  );
+};
 
-export default FreeCapacityList
+export default FreeCapacityList;

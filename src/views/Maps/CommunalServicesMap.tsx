@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer } from 'react-bootstrap';
+import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer, Tabs, Tab, Nav } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   initializeApi,
@@ -144,6 +144,7 @@ const CommunalServicesMap: React.FC = () => {
   const [isFilterExpanded, setIsFilterExpanded] = useState<boolean>(true);
   const [showNotification, setShowNotification] = useState<boolean>(false);
   const [notificationMessage, setNotificationMessage] = useState<string>('');
+  const [activeModalTab, setActiveModalTab] = useState<string>('details');
 
   const [showClusterModal, setShowClusterModal] = useState<boolean>(false);
   const [clusterHouses, setClusterHouses] = useState<ClusteredHouse[]>([]);
@@ -161,7 +162,6 @@ const CommunalServicesMap: React.FC = () => {
   const [showAreaModal, setShowAreaModal] = useState<boolean>(false);
   const [selectedArea, setSelectedArea] = useState<{title: string, description: string} | null>(null);
 
-  // New state for the add complaint modal
   const [showComplaintModal, setShowComplaintModal] = useState<boolean>(false);
   const [submittingComplaint, setSubmittingComplaint] = useState<boolean>(false);
   const [complaintForm, setComplaintForm] = useState<ComplaintFormData>({
@@ -173,7 +173,7 @@ const CommunalServicesMap: React.FC = () => {
     is_complaint: true
   });
 
-  const [mapBoundaries, setMapBoundaries] = useState<MapBoundaries>();
+  const [mapBoundaries, setMapBoundaries] = useState<MapBoundaries | undefined>();
 
   const [filters, setFilters] = useState<FilterState>({
     city_id: null,
@@ -504,6 +504,7 @@ const CommunalServicesMap: React.FC = () => {
             placemark.events.add('click', (e: any) => {
               if (locationMap[coordKey].length === 1) {
                 setSelectedItem(item);
+                setActiveModalTab('details');
                 setShowModal(true);
               } else {
                 setClusterHouses(locationMap[coordKey].map(house => ({...house, isSelected: false})));
@@ -654,6 +655,7 @@ const CommunalServicesMap: React.FC = () => {
   const handleCloseModal = (): void => {
     setShowModal(false);
     setSelectedItem(null);
+    setActiveModalTab('details');
   };
 
   const handleCloseClusterModal = (): void => {
@@ -665,6 +667,7 @@ const CommunalServicesMap: React.FC = () => {
     const house = mapData.find(h => h.id === houseId);
     if (house) {
       setSelectedItem(house);
+      setActiveModalTab('details');
       setShowClusterModal(false);
       setShowModal(true);
     }
@@ -712,7 +715,6 @@ const CommunalServicesMap: React.FC = () => {
     return address;
   };
 
-  // Function to open complaint modal and set the address
   const openComplaintModal = (house: CommunalServicesMapItem): void => {
     if (house && house.address && house.address.id) {
       setComplaintForm({
@@ -731,7 +733,6 @@ const CommunalServicesMap: React.FC = () => {
     }
   };
 
-  // Handle complaint form input changes
   const handleComplaintInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>): void => {
     const { name, value } = e.target;
     setComplaintForm({
@@ -740,7 +741,6 @@ const CommunalServicesMap: React.FC = () => {
     });
   };
 
-  // Handle complaint type and resource type select changes
   const handleComplaintSelectChange = (e: React.ChangeEvent<HTMLSelectElement>): void => {
     const { name, value } = e.target;
     setComplaintForm({
@@ -749,7 +749,6 @@ const CommunalServicesMap: React.FC = () => {
     });
   };
 
-  // Submit complaint
   const submitComplaint = async (): Promise<void> => {
     try {
       setSubmittingComplaint(true);
@@ -776,7 +775,6 @@ const CommunalServicesMap: React.FC = () => {
       setNotificationMessage('Жалоба успешно отправлена');
       setShowNotification(true);
       
-      // Refresh data to show new complaint
       await fetchCommunalServicesData();
       
     } catch (err) {
@@ -786,6 +784,51 @@ const CommunalServicesMap: React.FC = () => {
     } finally {
       setSubmittingComplaint(false);
     }
+  };
+
+  const renderOrganizationDetails = (org: any, title: string) => {
+    if (!org) return <p>Информация не доступна</p>;
+    
+    return (
+      <div className="mb-4 p-3 border-start border-4 border-info bg-light">
+        <div className="d-flex align-items-center mb-3">
+          <i className="fas fa-building me-2 text-info fs-4"></i>
+          <div className="w-100">
+            <strong>{title}:</strong><br />
+            <div className="d-flex justify-content-between align-items-center flex-wrap">
+              <span>{org.shortName || org.fullName || 'Не указана'}</span>
+              {org.url && (
+                <a href={org.url.startsWith('http') ? org.url : `https://${org.url}`}
+                   target="_blank" rel="noopener noreferrer"
+                   className="btn btn-sm btn-outline-primary mt-1">
+                  <i className="fas fa-external-link-alt me-1"></i> Сайт
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+        <div className="row mt-2">
+          <div className="col-md-6">
+            <small className="text-muted d-block mb-1">ИНН:</small>
+            <div className="fw-bold">{org.inn || 'Не указан'}</div>
+          </div>
+          <div className="col-md-6">
+            <small className="text-muted d-block mb-1">ОГРН:</small>
+            <div className="fw-bold">{org.ogrn || 'Не указан'}</div>
+          </div>
+        </div>
+        <div className="row mt-2">
+          <div className="col-md-6">
+            <small className="text-muted d-block mb-1">Телефон:</small>
+            <div className="fw-bold">{org.phone || 'Не указан'}</div>
+          </div>
+          <div className="col-md-6">
+            <small className="text-muted d-block mb-1">Адрес:</small>
+            <div className="fw-bold">{org.orgAddress || 'Не указан'}</div>
+          </div>
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -1024,7 +1067,7 @@ const CommunalServicesMap: React.FC = () => {
           </Col>
         </Row>
 
-        {/* House Details Modal */}
+        {/* House Details Modal with Tabs */}
         <Modal show={showModal} onHide={handleCloseModal} size="lg">
           <Modal.Header closeButton className="bg-light">
             <Modal.Title>
@@ -1036,149 +1079,61 @@ const CommunalServicesMap: React.FC = () => {
           </Modal.Header>
           <Modal.Body>
             {selectedItem && (
-                <>
-                  <div className="row mb-3">
-                    <div className="col-md-6">
-                      <div className="d-flex align-items-center mb-2">
-                        <span className="badge bg-primary me-2">Тип дома</span>
-                        <span>{selectedItem.house_type?.houseTypeName || 'Не указан'}</span>
-                      </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="d-flex align-items-center mb-2">
-                    <span className={`badge ${selectedItem.house_condition?.houseCondition === 'Неисправный' ? 'bg-warning' : 'bg-success'} me-2`}>
-                      Состояние
-                    </span>
-                        <span className={selectedItem.house_condition?.houseCondition === 'Неисправный' ? 'text-warning' : 'text-success'}>
-                      {selectedItem.house_condition?.houseCondition || 'Не указано'}
-                    </span>
-                      </div>
-                    </div>
-                  </div>
+              <div>
+                <Nav variant="tabs" className="mb-3" activeKey={activeModalTab} onSelect={(k) => k && setActiveModalTab(k)}>
+                  <Nav.Item>
+                    <Nav.Link eventKey="details">Детали дома</Nav.Link>
+                  </Nav.Item>
+                  <Nav.Item>
+                    <Nav.Link eventKey="management">Управляющая компания</Nav.Link>
+                  </Nav.Item>
+                  <Nav.Item>
+                    <Nav.Link eventKey="municipality">Муниципальная организация</Nav.Link>
+                  </Nav.Item>
+                  <Nav.Item>
+                    <Nav.Link eventKey="incidents">Инциденты</Nav.Link>
+                  </Nav.Item>
+                  <Nav.Item>
+                    <Nav.Link eventKey="rso">РСО</Nav.Link>
+                  </Nav.Item>
+                </Nav>
 
-                  <div className="row mb-4">
-                    <div className="col-md-6">
-                      <div className="info-card p-3 border-start border-4 border-primary bg-light">
-                        <strong>Год постройки:</strong> {selectedItem.buildingYear || 'Не указан'}
+                {/* House Details Tab */}
+                {activeModalTab === 'details' && (
+                  <>
+                    <div className="row mb-3">
+                      <div className="col-md-6">
+                        <div className="d-flex align-items-center mb-2">
+                          <span className="badge bg-primary me-2">Тип дома</span>
+                          <span>{selectedItem.house_type?.houseTypeName || 'Не указан'}</span>
+                        </div>
                       </div>
-                    </div>
-                    <div className="col-md-6">
-                      <div className="info-card p-3 border-start border-4 border-success bg-light">
-                        <strong>Кадастровый номер:</strong> {selectedItem.cadastreNumber || 'Не указан'}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="mb-4 p-3 border-start border-4 border-info bg-light">
-                    <div className="d-flex align-items-center mb-3">
-                      <i className="fas fa-building me-2 text-info fs-4"></i>
-                      <div className="w-100">
-                        <strong>Управляющая компания:</strong><br />
-                        <div className="d-flex justify-content-between align-items-center flex-wrap">
-                          <span>{selectedItem.management_org?.shortName || selectedItem.management_org?.fullName || 'Не указана'}</span>
-                          {selectedItem.management_org?.url && (
-                              <a href={selectedItem.management_org.url.startsWith('http') ? selectedItem.management_org.url : `https://${selectedItem.management_org.url}`}
-                                 target="_blank" rel="noopener noreferrer"
-                                 className="btn btn-sm btn-outline-primary mt-1">
-                                <i className="fas fa-external-link-alt me-1"></i> Сайт
-                              </a>
-                          )}
+                      <div className="col-md-6">
+                        <div className="d-flex align-items-center mb-2">
+                          <span className={`badge ${selectedItem.house_condition?.houseCondition === 'Неисправный' ? 'bg-warning' : 'bg-success'} me-2`}>
+                            Состояние
+                          </span>
+                          <span className={selectedItem.house_condition?.houseCondition === 'Неисправный' ? 'text-warning' : 'text-success'}>
+                            {selectedItem.house_condition?.houseCondition || 'Не указано'}
+                          </span>
                         </div>
                       </div>
                     </div>
-                    <div className="row mt-2">
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">ИНН:</small>
-                        <div className="fw-bold">{selectedItem.management_org?.inn || 'Не указан'}</div>
-                      </div>
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">ОГРН:</small>
-                        <div className="fw-bold">{selectedItem.management_org?.ogrn || 'Не указан'}</div>
-                      </div>
-                    </div>
-                    <div className="row mt-2">
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">Телефон:</small>
-                        <div className="fw-bold">{selectedItem.management_org?.phone || 'Не указан'}</div>
-                      </div>
-                      <div className="col-md-6">
-                        <small className="text-muted d-block mb-1">Адрес:</small>
-                        <div className="fw-bold">{selectedItem.management_org?.orgAddress || 'Не указан'}</div>
-                      </div>
-                    </div>
-                  </div>
 
-                  {selectedItem.rso && selectedItem.rso.length > 0 && (
-                      <div className="mb-4">
-                        <h6 className="text-primary mb-3">Ресурсоснабжающие организации</h6>
-                        <div className="accordion" id="rsoAccordion">
-                          {selectedItem.rso.map((rso, index) => (
-                              <div className="accordion-item" key={index}>
-                                <h2 className="accordion-header" id={`rsoHeading${index}`}>
-                                  <button className="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target={`#rsoCollapse${index}`} aria-expanded="false" aria-controls={`rsoCollapse${index}`}>
-                                    <i className="fas fa-industry me-2 text-secondary"></i>
-                                    {rso.shortName || rso.fullName}
-                                  </button>
-                                </h2>
-                                <div id={`rsoCollapse${index}`} className="accordion-collapse collapse" aria-labelledby={`rsoHeading${index}`} data-bs-parent="#rsoAccordion">
-                                  <div className="accordion-body">
-                                    <div className="row">
-                                      <div className="col-md-6">
-                                        <small className="text-muted d-block mb-1">ИНН:</small>
-                                        <div className="fw-bold">{rso.inn || 'Не указан'}</div>
-                                      </div>
-                                      <div className="col-md-6">
-                                        <small className="text-muted d-block mb-1">ОГРН:</small>
-                                        <div className="fw-bold">{rso.ogrn || 'Не указан'}</div>
-                                      </div>
-                                    </div>
-                                    <div className="row mt-2">
-                                      <div className="col-md-6">
-                                        <small className="text-muted d-block mb-1">Телефон:</small>
-                                        <div className="fw-bold">{rso.phone || 'Не указан'}</div>
-                                      </div>
-                                      <div className="col-md-6">
-                                        <small className="text-muted d-block mb-1">Адрес:</small>
-                                        <div className="fw-bold">{rso.orgAddress || 'Не указан'}</div>
-                                      </div>
-                                    </div>
-                                    {rso.url && (
-                                        <div className="row mt-2">
-                                          <div className="col-12">
-                                            <small className="text-muted d-block mb-1">Сайт:</small>
-                                            <a href={rso.url.startsWith('http') ? rso.url : `https://${rso.url}`}
-                                               target="_blank" rel="noopener noreferrer"
-                                               className="text-decoration-none">
-                                              {rso.url} <i className="fas fa-external-link-alt ms-1 small"></i>
-                                            </a>
-                                          </div>
-                                        </div>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
-                          ))}
+                    <div className="row mb-4">
+                      <div className="col-md-6">
+                        <div className="info-card p-3 border-start border-4 border-primary bg-light">
+                          <strong>Год постройки:</strong> {selectedItem.buildingYear || 'Не указан'}
                         </div>
                       </div>
-                  )}
-
-                  {selectedItem.resource_outages && selectedItem.resource_outages.length > 0 && (
-                      <div className="mb-4">
-                        <h6 className="text-warning mb-3">Отключения ресурсов</h6>
-                        <div className="card">
-                          <ul className="list-group list-group-flush">
-                            {selectedItem.resource_outages.map((outage, index) => (
-                                <li key={index} className="list-group-item d-flex align-items-center">
-                                  <i className="fas fa-exclamation-triangle me-2 text-warning"></i>
-                                  {outage.name}
-                                </li>
-                            ))}
-                          </ul>
+                      <div className="col-md-6">
+                        <div className="info-card p-3 border-start border-4 border-success bg-light">
+                          <strong>Кадастровый номер:</strong> {selectedItem.cadastreNumber || 'Не указан'}
                         </div>
                       </div>
-                  )}
+                    </div>
 
-                  {selectedItem.ozp_period && (
+                    {selectedItem.ozp_period && (
                       <div className="mb-4">
                         <h6 className="text-primary mb-3">Отопительный период</h6>
                         <div className="card">
@@ -1206,17 +1161,52 @@ const CommunalServicesMap: React.FC = () => {
                           </div>
                         </div>
                       </div>
-                  )}
-
-                  {selectedItem.incidents && selectedItem.incidents.length > 0 && (
+                    )}
+                    
+                    {selectedItem.resource_outages && selectedItem.resource_outages.length > 0 && (
                       <div className="mb-4">
-                        <h5 className="text-danger mb-3">
-                          <i className="fas fa-exclamation-circle me-2"></i>
-                          Активные инциденты ({selectedItem.incidents.length})
-                        </h5>
-                        <div className="table-responsive">
-                          <table className="table table-bordered table-striped table-hover">
-                            <thead className="table-dark">
+                        <h6 className="text-warning mb-3">Отключения ресурсов</h6>
+                        <div className="card">
+                          <ul className="list-group list-group-flush">
+                            {selectedItem.resource_outages.map((outage, index) => (
+                              <li key={index} className="list-group-item d-flex align-items-center">
+                                <i className="fas fa-exclamation-triangle me-2 text-warning"></i>
+                                {outage.name}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Management Company Tab */}
+                {activeModalTab === 'management' && (
+                  <>
+                    {renderOrganizationDetails(selectedItem.management_org, "Управляющая компания")}
+                  </>
+                )}
+
+                {/* Municipality Organization Tab */}
+                {activeModalTab === 'municipality' && (
+                  <>
+                    {renderOrganizationDetails(selectedItem.municipality_org, "Муниципальная организация")}
+                  </>
+                )}
+
+                {/* Incidents Tab */}
+                {activeModalTab === 'incidents' && (
+                  <>
+                    <h5 className="text-danger mb-3">
+                      <i className="fas fa-exclamation-circle me-2"></i>
+                      Инциденты {selectedItem.incidents && selectedItem.incidents.length > 0 ? `(${selectedItem.incidents.length})` : '(0)'}
+                    </h5>
+                    
+                    {selectedItem.incidents && selectedItem.incidents.length > 0 ? (
+                      <div className="table-responsive">
+                        <table className="table table-bordered table-striped table-hover">
+                          <thead className="table-dark">
                             <tr>
                               <th>Тип</th>
                               <th>Ресурс</th>
@@ -1225,91 +1215,189 @@ const CommunalServicesMap: React.FC = () => {
                               <th>Тип</th>
                               <th>Дата</th>
                             </tr>
-                            </thead>
-                            <tbody>
+                          </thead>
+                          <tbody>
                             {selectedItem.incidents.map((incident, index) => (
-                                <tr key={index}>
-                                  <td>{incident.type?.name || 'Не указан'}</td>
-                                  <td>
-                              <span className="badge bg-info">
-                                {incident.resource_type?.name || 'Не указан'}
-                              </span>
-                                  </td>
-                                  <td>{incident.title}</td>
-                                  <td>
-                              <span className={`badge ${getIncidentStatusClass(incident.status?.name || '')}`}>
-                                {incident.status?.name || 'Не указан'}
-                              </span>
-                                  </td>
-                                  <td>
-                                    {incident.is_complaint ? (
-                                        <span className="badge bg-warning">Жалоба</span>
-                                    ) : (
-                                        <span className="badge bg-secondary">Инцидент</span>
-                                    )}
-                                  </td>
-                                  <td>{formatDate(incident.created_at)}</td>
-                                </tr>
+                              <tr key={index}>
+                                <td>{incident.type?.name || 'Не указан'}</td>
+                                <td>
+                                  <span className="badge bg-info">
+                                    {incident.resource_type?.name || 'Не указан'}
+                                  </span>
+                                </td>
+                                <td>{incident.title}</td>
+                                <td>
+                                  <span className={`badge ${getIncidentStatusClass(incident.status?.name || '')}`}>
+                                    {incident.status?.name || 'Не указан'}
+                                  </span>
+                                </td>
+                                <td>
+                                  {incident.is_complaint ? (
+                                    <span className="badge bg-warning">Жалоба</span>
+                                  ) : (
+                                    <span className="badge bg-secondary">Инцидент</span>
+                                  )}
+                                </td>
+                                <td>{formatDate(incident.created_at)}</td>
+                              </tr>
                             ))}
-                            </tbody>
-                          </table>
-                        </div>
+                          </tbody>
+                        </table>
                       </div>
-                  )}
+                    ) : (
+                      <div className="alert alert-info">
+                        Нет активных инцидентов
+                      </div>
+                    )}
 
-                  {selectedItem.incidents && selectedItem.incidents.filter(inc => inc.is_complaint).length > 0 && (
-                      <div className="mb-4">
-                        <h5 className="text-warning mb-3">
-                          <i className="fas fa-comment-dots me-2"></i>
-                          Жалобы ({selectedItem.incidents.filter(inc => inc.is_complaint).length})
-                        </h5>
-                        <div className="accordion" id="complaintsAccordion">
-                          {selectedItem.incidents.filter(inc => inc.is_complaint).map((complaint, index) => (
-                              <div className="accordion-item" key={index}>
-                                <h2 className="accordion-header" id={`complaintHeading${index}`}>
-                                  <button className="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target={`#complaintCollapse${index}`} aria-expanded="false" aria-controls={`complaintCollapse${index}`}>
-                                    <div className="d-flex justify-content-between align-items-center w-100 me-3">
-                                      <span>{complaint.title}</span>
-                                      <span className={`badge ${getIncidentStatusClass(complaint.status?.name || '')}`}>
-                                {complaint.status?.name || 'Не указан'}
-                              </span>
-                                    </div>
-                                  </button>
-                                </h2>
-                                <div id={`complaintCollapse${index}`} className="accordion-collapse collapse" aria-labelledby={`complaintHeading${index}`} data-bs-parent="#complaintsAccordion">
-                                  <div className="accordion-body">
-                                    <p className="mb-1">{complaint.description}</p>
-                                    <div className="d-flex justify-content-between align-items-center mt-3">
-                                      <small className="text-muted">
-                                        <i className="far fa-calendar me-1"></i> {formatDate(complaint.created_at)}
-                                      </small>
-                                      <span className="badge bg-info">
-                                {complaint.resource_type?.name || 'Ресурс не указан'}
-                              </span>
-                                    </div>
-                                  </div>
+                    <h5 className="text-warning mt-4 mb-3">
+                      <i className="fas fa-comment-dots me-2"></i>
+                      Жалобы {selectedItem.incidents && selectedItem.incidents.filter(inc => inc.is_complaint).length > 0 ? 
+                        `(${selectedItem.incidents.filter(inc => inc.is_complaint).length})` : '(0)'}
+                    </h5>
+                    
+                    {selectedItem.incidents && selectedItem.incidents.filter(inc => inc.is_complaint).length > 0 ? (
+                      <div className="accordion" id="complaintsAccordion">
+                        {selectedItem.incidents.filter(inc => inc.is_complaint).map((complaint, index) => (
+                          <div className="accordion-item" key={index}>
+                            <h2 className="accordion-header" id={`complaintHeading${index}`}>
+                              <button 
+                                className="accordion-button collapsed" 
+                                type="button" 
+                                data-bs-toggle="collapse" 
+                                data-bs-target={`#complaintCollapse${index}`} 
+                                aria-expanded="false" 
+                                aria-controls={`complaintCollapse${index}`}
+                              >
+                                <div className="d-flex justify-content-between align-items-center w-100 me-3">
+                                  <span>{complaint.title}</span>
+                                  <span className={`badge ${getIncidentStatusClass(complaint.status?.name || '')}`}>
+                                    {complaint.status?.name || 'Не указан'}
+                                  </span>
+                                </div>
+                              </button>
+                            </h2>
+                            <div 
+                              id={`complaintCollapse${index}`} 
+                              className="accordion-collapse collapse" 
+                              aria-labelledby={`complaintHeading${index}`} 
+                              data-bs-parent="#complaintsAccordion"
+                            >
+                              <div className="accordion-body">
+                                <p className="mb-1">{complaint.description}</p>
+                                <div className="d-flex justify-content-between align-items-center mt-3">
+                                  <small className="text-muted">
+                                    <i className="far fa-calendar me-1"></i> {formatDate(complaint.created_at)}
+                                  </small>
+                                  <span className="badge bg-info">
+                                    {complaint.resource_type?.name || 'Ресурс не указан'}
+                                  </span>
                                 </div>
                               </div>
-                          ))}
-                        </div>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                  )}
+                    ) : (
+                      <div className="alert alert-info">
+                        Нет жалоб
+                      </div>
+                    )}
+                  </>
+                )}
 
-                  <div className="row mt-3">
-                    <div className="col-md-6">
-                      <small className="text-muted">
-                        <i className="far fa-calendar-plus me-1"></i>
-                        Создан: {formatDate(selectedItem.created_at)}
-                      </small>
-                    </div>
-                    <div className="col-md-6">
-                      <small className="text-muted">
-                        <i className="far fa-calendar-alt me-1"></i>
-                        Обновлен: {formatDate(selectedItem.updated_at)}
-                      </small>
-                    </div>
+                {/* RSO Tab */}
+                {activeModalTab === 'rso' && (
+                  <>
+                    <h5 className="text-primary mb-3">Ресурсоснабжающие организации</h5>
+                    
+                    {selectedItem.rso && selectedItem.rso.length > 0 ? (
+                      <div className="accordion" id="rsoAccordion">
+                        {selectedItem.rso.map((rso, index) => (
+                          <div className="accordion-item" key={index}>
+                            <h2 className="accordion-header" id={`rsoHeading${index}`}>
+                              <button 
+                                className="accordion-button" 
+                                type="button" 
+                                data-bs-toggle="collapse" 
+                                data-bs-target={`#rsoCollapse${index}`} 
+                                aria-expanded={index === 0 ? "true" : "false"} 
+                                aria-controls={`rsoCollapse${index}`}
+                              >
+                                <i className="fas fa-industry me-2 text-secondary"></i>
+                                {rso.shortName || rso.fullName}
+                              </button>
+                            </h2>
+                            <div 
+                              id={`rsoCollapse${index}`} 
+                              className={`accordion-collapse collapse ${index === 0 ? 'show' : ''}`} 
+                              aria-labelledby={`rsoHeading${index}`} 
+                              data-bs-parent="#rsoAccordion"
+                            >
+                              <div className="accordion-body">
+                                <div className="row">
+                                  <div className="col-md-6">
+                                    <small className="text-muted d-block mb-1">ИНН:</small>
+                                    <div className="fw-bold">{rso.inn || 'Не указан'}</div>
+                                  </div>
+                                  <div className="col-md-6">
+                                    <small className="text-muted d-block mb-1">ОГРН:</small>
+                                    <div className="fw-bold">{rso.ogrn || 'Не указан'}</div>
+                                  </div>
+                                </div>
+                                <div className="row mt-2">
+                                  <div className="col-md-6">
+                                    <small className="text-muted d-block mb-1">Телефон:</small>
+                                    <div className="fw-bold">{rso.phone || 'Не указан'}</div>
+                                  </div>
+                                  <div className="col-md-6">
+                                    <small className="text-muted d-block mb-1">Адрес:</small>
+                                    <div className="fw-bold">{rso.orgAddress || 'Не указан'}</div>
+                                  </div>
+                                </div>
+                                {rso.url && (
+                                  <div className="row mt-2">
+                                    <div className="col-12">
+                                      <small className="text-muted d-block mb-1">Сайт:</small>
+                                      <a 
+                                        href={rso.url.startsWith('http') ? rso.url : `https://${rso.url}`}
+                                        target="_blank" 
+                                        rel="noopener noreferrer"
+                                        className="text-decoration-none"
+                                      >
+                                        {rso.url} <i className="fas fa-external-link-alt ms-1 small"></i>
+                                      </a>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="alert alert-info">
+                        Нет данных о ресурсоснабжающих организациях
+                      </div>
+                    )}
+                  </>
+                )}
+
+                <div className="row mt-3">
+                  <div className="col-md-6">
+                    <small className="text-muted">
+                      <i className="far fa-calendar-plus me-1"></i>
+                      Создан: {formatDate(selectedItem.created_at)}
+                    </small>
                   </div>
-                </>
+                  <div className="col-md-6">
+                    <small className="text-muted">
+                      <i className="far fa-calendar-alt me-1"></i>
+                      Обновлен: {formatDate(selectedItem.updated_at)}
+                    </small>
+                  </div>
+                </div>
+              </div>
             )}
           </Modal.Body>
           <Modal.Footer>
@@ -1622,6 +1710,20 @@ const CommunalServicesMap: React.FC = () => {
         .info-card:hover {
           transform: translateY(-2px);
           box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+        }
+        
+        .accordion-button:not(.collapsed) {
+          background-color: rgba(13, 110, 253, 0.1);
+          color: #0d6efd;
+        }
+        
+        .nav-tabs .nav-link {
+          color: #495057;
+        }
+        
+        .nav-tabs .nav-link.active {
+          font-weight: 500;
+          color: #0d6efd;
         }
       `}</style>
       </React.Fragment>

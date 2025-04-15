@@ -1,5 +1,15 @@
 import { checkUserPermission } from '../services/api';
 
+// Список всех возможных прав (permissionsList)
+export const permissionsList = [
+  'view_hs', 'create_hs', 'update_hs', 'delete_hs',
+  'view_hs_type', 'create_hs_type', 'update_hs_type', 'delete_hs_type',
+  'view_org', 'create_org', 'update_org', 'delete_org',
+  'view_hs_period', 'create_hs_period', 'update_hs_period', 'delete_hs_period',
+  'view_oks', 'create_oks', 'update_oks', 'delete_oks',
+  'view_mkd', 'create_mkd', 'update_mkd', 'delete_mkd'
+];
+
 // Кэш для результатов проверки доступа
 const permissionCache: Record<string, boolean> = {};
 

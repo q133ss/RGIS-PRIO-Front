@@ -77,7 +77,7 @@ export interface ApiHeatSource {
   };
 }
 
-interface Passport {
+export interface Passport {
   id: number;
   hs_id: number;
   passport_number: string;

@@ -12,12 +12,14 @@ export interface Permissions {
 export const fetchPermissions = async (): Promise<Permissions> => {
   try {
     const permissions = await api.get<Permissions>('/permissions');
+    console.log('Получены права с сервера:', permissions);
     // Сохраняем полученные права в localStorage
     localStorage.setItem(PERMISSIONS_STORAGE_KEY, JSON.stringify(permissions));
     return permissions;
   } catch (error) {
     console.error('Ошибка при загрузке прав доступа:', error);
-    return {};
+    // Возвращаем сохраненные права, если не удалось загрузить новые
+    return getStoredPermissions();
   }
 };
 
@@ -34,36 +36,53 @@ export const getStoredPermissions = (): Permissions => {
   }
 };
 
+// Улучшенная проверка, является ли пользователь администратором
+export const isAdmin = (): boolean => {
+  try {
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return false;
+    
+    const user = JSON.parse(userStr);
+    
+    // Проверка через массив ролей
+    if (user.roles && Array.isArray(user.roles)) {
+      return user.roles.some((role: any) => {
+        if (typeof role === 'string') {
+          return role === 'admin' || role === 'super_admin' || role.toLowerCase().includes('admin');
+        }
+        return (role.slug === 'admin' || role.slug === 'super_admin' || 
+               (role.name && role.name.toLowerCase().includes('admin')));
+      });
+    }
+    
+    // Проверка через одну роль
+    if (user.role) {
+      if (typeof user.role === 'string') {
+        return user.role === 'admin' || user.role === 'super_admin' || user.role.toLowerCase().includes('admin');
+      }
+      return (user.role.slug === 'admin' || user.role.slug === 'super_admin' || 
+             (user.role.name && user.role.name.toLowerCase().includes('admin')));
+    }
+    
+    return false;
+  } catch (error) {
+    console.error('Ошибка при проверке прав администратора:', error);
+    return false;
+  }
+};
+
 // Проверка наличия конкретного права у пользователя
 export const hasPermission = async (permissionSlug: string): Promise<boolean> => {
   try {
+    // Если пользователь - администратор, у него есть все права
+    if (isAdmin()) {
+      console.log(`Пользователь является администратором - право ${permissionSlug} доступно`);
+      return true;
+    }
+    
     // Если проверяем административное право
     if (permissionSlug === 'admin_access' || permissionSlug === 'admin_users') {
-      // Проверка административных прав через роли пользователя
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      
-      if (user.roles && Array.isArray(user.roles)) {
-        const isAdmin = user.roles.some((role: any) => 
-          role.slug === 'admin' || 
-          role.slug === 'super_admin' || 
-          (role.name && role.name.toLowerCase().includes('админ'))
-        );
-        return isAdmin;
-      }
-      
-      if (user.role) {
-        if (typeof user.role === 'object') {
-          return user.role.slug === 'admin' || 
-                 user.role.slug === 'super_admin' || 
-                 (user.role.name && user.role.name.toLowerCase().includes('админ'));
-        }
-        if (typeof user.role === 'string') {
-          return user.role.toLowerCase().includes('admin');
-        }
-      }
-      
-      // Если не нашли роль админа
-      return false;
+      return isAdmin();
     }
     
     // Для остальных прав проверяем через API
@@ -72,9 +91,22 @@ export const hasPermission = async (permissionSlug: string): Promise<boolean> =>
       await fetchPermissions();
     }
     
-    // Отправляем запрос на проверку конкретного права
-    const response = await api.post<{access: boolean}>(`/permissions/${permissionSlug}`, {});
-    return response.access;
+    // Сначала проверяем в локальном кэше прав
+    const permissions = getStoredPermissions();
+    if (permissionSlug in permissions) {
+      console.log(`Право ${permissionSlug} найдено в локальном кэше: ${permissions[permissionSlug]}`);
+      return true;
+    }
+    
+    // Если в кэше нет, отправляем запрос на проверку
+    try {
+      const response = await api.post<{access: boolean}>(`/permissions/${permissionSlug}`, {});
+      console.log(`Проверка права ${permissionSlug} через API: ${response.access}`);
+      return response.access;
+    } catch (apiError) {
+      console.error(`Ошибка при проверке права ${permissionSlug} через API:`, apiError);
+      return false;
+    }
   } catch (error) {
     console.error(`Ошибка при проверке права ${permissionSlug}:`, error);
     return false;
@@ -88,6 +120,11 @@ const permissionCache: Record<string, boolean> = {};
 export const checkPermissionWithCache = async (permissionSlug: string | null): Promise<boolean> => {
   if (!permissionSlug) return true;
   
+  // Администраторам доступно всё
+  if (isAdmin()) {
+    return true;
+  }
+  
   if (permissionSlug in permissionCache) {
     return permissionCache[permissionSlug];
   }
@@ -98,7 +135,20 @@ export const checkPermissionWithCache = async (permissionSlug: string | null): P
   return result;
 };
 
+// Сброс кэша прав (например, при смене пользователя)
+export const clearPermissionCache = (): void => {
+  Object.keys(permissionCache).forEach(key => {
+    delete permissionCache[key];
+  });
+};
+
 // Инициализация прав при загрузке приложения
 export const initPermissions = async (): Promise<void> => {
-  await fetchPermissions();
+  try {
+    clearPermissionCache(); // Сбрасываем кэш перед инициализацией
+    await fetchPermissions();
+    console.log('Права успешно инициализированы');
+  } catch (error) {
+    console.error('Ошибка при инициализации прав:', error);
+  }
 };
