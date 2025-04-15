@@ -1591,6 +1591,163 @@ const HeatSources: React.FC = () => {
         </Modal>
     );
 
+    // Function to handle printing the passport
+    const handlePrintPassport = () => {
+        // Create a new window for printing
+        const printWindow = window.open('', '_blank');
+        if (!printWindow) return;
+
+        // Ensure current item and passport exist
+        if (!currentItem || !currentItem.passport) return;
+
+        // Format address list for printing
+        let addressList = '';
+        if (currentItem.supply_address_ids && Array.isArray(currentItem.supply_address_ids) && currentItem.supply_address_ids.length > 0) {
+            addressList = currentItem.supply_address_ids.map(addressId => {
+                const address = addressMappings[addressId];
+                return address ? getAddressDisplayName(address) : `Адрес ${addressId}`;
+            }).join('<br/>');
+        } else {
+            addressList = 'Нет данных об обслуживаемых зданиях';
+        }
+
+        // Add print content with styling
+        printWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Паспорт теплоисточника ${currentItem.sourceName}</title>
+                <style>
+                    body {
+                        font-family: Arial, sans-serif;
+                        padding: 20px;
+                        color: #333;
+                    }
+                    .passport-container {
+                        max-width: 800px;
+                        margin: 0 auto;
+                    }
+                    .passport-header {
+                        text-align: center;
+                        margin-bottom: 20px;
+                        border-bottom: 1px solid #ddd;
+                        padding-bottom: 10px;
+                    }
+                    .section-title {
+                        color: #0066cc;
+                        font-weight: bold;
+                        border-bottom: 1px solid #ddd;
+                        padding-bottom: 5px;
+                        margin-top: 20px;
+                    }
+                    .row {
+                        display: flex;
+                        flex-wrap: wrap;
+                        margin-bottom: 10px;
+                    }
+                    .col {
+                        flex: 0 0 50%;
+                        padding: 5px;
+                    }
+                    .col-full {
+                        flex: 0 0 100%;
+                        padding: 5px;
+                    }
+                    .address-list {
+                        padding: 10px;
+                        background-color: #f9f9f9;
+                        border-radius: 4px;
+                        margin-top: 10px;
+                    }
+                    @media print {
+                        body {
+                            padding: 0;
+                            color: #000;
+                        }
+                        .no-print {
+                            display: none;
+                        }
+                    }
+                </style>
+            </head>
+            <body>
+                <div class="passport-container">
+                    <div class="passport-header">
+                        <h2>ПАСПОРТ ТЕПЛОИСТОЧНИКА</h2>
+                        <div class="row">
+                            <div class="col"><strong>Номер паспорта:</strong> ${currentItem.passport.passport_number}</div>
+                            <div class="col"><strong>Дата выдачи:</strong> ${currentItem.passport.issue_date}</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="section-title">1. ОБЩИЕ СВЕДЕНИЯ</h3>
+                        <div class="row">
+                            <div class="col"><strong>Наименование:</strong> ${currentItem.sourceName}</div>
+                            <div class="col"><strong>Тип котельной:</strong> ${currentItem.type}</div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><strong>Собственник:</strong> ${currentItem.owner}</div>
+                            <div class="col"><strong>Эксплуатирующая организация:</strong> ${currentItem.operator}</div>
+                        </div>
+                        <div class="row">
+                            <div class="col-full"><strong>Адрес:</strong> ${currentItem.address}</div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><strong>Период работы:</strong> ${currentItem.operationPeriod}</div>
+                            <div class="col"><strong>Год ввода в эксплуатацию:</strong> ${currentItem.yearBuilt}</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="section-title">2. ТЕХНИЧЕСКИЕ ХАРАКТЕРИСТИКИ</h3>
+                        <div class="row">
+                            <div class="col"><strong>Установленная мощность, Гкал/час:</strong> ${currentItem.installed_capacity_gcal_hour}</div>
+                            <div class="col"><strong>Доступная мощность, Гкал/час:</strong> ${currentItem.available_capacity_gcal_hour}</div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><strong>Основной вид топлива:</strong> ${currentItem.primary_fuel_type}</div>
+                            <div class="col"><strong>Вторичный вид топлива:</strong> ${currentItem.secondary_fuel_type || "Не предусмотрен"}</div>
+                        </div>
+                        <div class="row">
+                            <div class="col"><strong>Температурный график:</strong> ${currentItem.temperature_schedule}</div>
+                            <div class="col"><strong>Дата начала передачи данных:</strong> ${currentItem.data_transmission_start_date || "Не указана"}</div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h3 class="section-title">3. ЗОНА ТЕПЛОСНАБЖЕНИЯ</h3>
+                        <div class="row">
+                            <div class="col-full">
+                                <strong>Обслуживаемые здания:</strong>
+                                <div class="address-list">
+                                    ${addressList}
+                                </div>
+                            </div>
+                        </div>
+                        <div class="row">
+                            <div class="col-full"><strong>Потребители:</strong> ${currentItem.consumers || "Не указаны"}</div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="no-print" style="text-align: center; margin-top: 30px;">
+                    <button onclick="window.print();" style="padding: 10px 20px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        Печать документа
+                    </button>
+                </div>
+            </body>
+            </html>
+        `);
+        
+        printWindow.document.close();
+        printWindow.focus();
+        // Automatically trigger print dialog
+        setTimeout(() => {
+            printWindow.print();
+        }, 500);
+    };
+
     const renderPassportModal = () => {
         if (!currentItem) {
             return null;
@@ -1751,7 +1908,7 @@ const HeatSources: React.FC = () => {
                     <Button variant="secondary" onClick={() => setShowPassportModal(false)}>
                         Закрыть
                     </Button>
-                    <Button variant="primary" disabled>
+                    <Button variant="primary" onClick={handlePrintPassport}>
                         <i className="ph-duotone ph-printer me-1"></i>
                         Печать
                     </Button>
