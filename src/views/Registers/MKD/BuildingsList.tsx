@@ -1096,7 +1096,7 @@ const BuildingsList: React.FC = () => {
                 const fieldKey = column.field as keyof MultiApartmentBuilding;
                 let cellValue: any = building[fieldKey];
 
-                if (cellValue === null || cellValue === undefined || cellValue === '' || String(cellValue).toLowerCase() === 'not specified') {
+                if (cellValue === null || cellValue === undefined || cellValue === '' || String(cellValue).toLowerCase() === 'not specified' || String(cellValue).toLowerCase() === 'не указано') {
                     cellValue = <span className="text-muted fst-italic">Не указано</span>;
                 } else {
                     cellValue = String(cellValue);
