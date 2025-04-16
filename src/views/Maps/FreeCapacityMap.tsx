@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer } from 'react-bootstrap';
+import { Card, Row, Col, Modal, Button, Spinner, Form, Toast, ToastContainer } from 'react-bootstrap';
 import { Link, useNavigate } from 'react-router-dom';
 import {
   initializeApi,
@@ -21,17 +21,21 @@ declare global {
 interface FreeCapacityArea {
   id: number;
   coordinates: number[][];
-  resource: {
+  resource?: {
     id: number;
     name: string;
     slug: string;
+    created_at: string;
+    updated_at: string;
   };
-  equipment: {
+  equipment?: {
     id: number;
     name: string;
     slug: string;
+    created_at: string;
+    updated_at: string;
   };
-  org: {
+  org?: {
     id: number;
     fullName: string;
     shortName: string;
@@ -39,10 +43,15 @@ interface FreeCapacityArea {
     ogrn: string;
     orgAddress: string;
     phone: string;
-    url: string;
+    url: string | null;
+    created_at: string;
+    updated_at: string;
   };
   created_at: string;
   updated_at: string;
+  resource_type_id?: number;
+  equipment_type_id?: number;
+  org_id?: number;
 }
 
 interface FilterState {
@@ -192,17 +201,17 @@ const FreeCapacityMap: React.FC = () => {
           const polygon = new window.ymaps.Polygon(
               [area.coordinates],
               {
-                hintContent: area.org.shortName,
+                hintContent: area.org?.shortName || 'Неизвестная организация',
                 balloonContent: `
                 <div>
-                  <strong>${area.resource.name}</strong><br>
-                  Оборудование: ${area.equipment.name}<br>
-                  Организация: ${area.org.shortName}
+                  <strong>${area.resource?.name || 'Неизвестный ресурс'}</strong><br>
+                  Оборудование: ${area.equipment?.name || 'Неизвестное оборудование'}<br>
+                  Организация: ${area.org?.shortName || 'Неизвестная организация'}
                 </div>
               `
               },
               {
-                fillColor: getAreaColor(area.resource.slug),
+                fillColor: getAreaColor(area.resource?.slug || ''),
                 strokeColor: '#000000',
                 opacity: 0.5,
                 strokeWidth: 2,
@@ -495,7 +504,7 @@ const FreeCapacityMap: React.FC = () => {
       <Modal show={showModal} onHide={() => setShowModal(false)} size="lg">
         <Modal.Header closeButton className="bg-light">
           <Modal.Title>
-            {selectedArea?.resource.name || 'Информация о свободной мощности'}
+            {selectedArea?.resource?.name || 'Информация о свободной мощности'}
           </Modal.Title>
         </Modal.Header>
         <Modal.Body>
@@ -505,13 +514,13 @@ const FreeCapacityMap: React.FC = () => {
                 <div className="col-md-6">
                   <div className="d-flex align-items-center mb-2">
                     <span className="badge bg-primary me-2">Ресурс</span>
-                    <span>{selectedArea.resource.name}</span>
+                    <span>{selectedArea.resource?.name || 'Неизвестный ресурс'}</span>
                   </div>
                 </div>
                 <div className="col-md-6">
                   <div className="d-flex align-items-center mb-2">
                     <span className="badge bg-primary me-2">Оборудование</span>
-                    <span>{selectedArea.equipment.name}</span>
+                    <span>{selectedArea.equipment?.name || 'Неизвестное оборудование'}</span>
                   </div>
                 </div>
               </div>
@@ -522,10 +531,10 @@ const FreeCapacityMap: React.FC = () => {
                   <div className="w-100">
                     <strong>Организация:</strong><br />
                     <div className="d-flex justify-content-between align-items-center flex-wrap">
-                      <span>{selectedArea.org.shortName || selectedArea.org.fullName}</span>
-                      {selectedArea.org.url && (
+                      <span>{selectedArea.org?.shortName || selectedArea.org?.fullName || 'Неизвестная организация'}</span>
+                      {selectedArea.org?.url && (
                         <a
-                          href={selectedArea.org.url.startsWith('http') ? selectedArea.org.url : `https://${selectedArea.org.url}`}
+                          href={selectedArea.org?.url?.startsWith('http') ? selectedArea.org?.url : `https://${selectedArea.org?.url}`}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="btn btn-sm btn-outline-primary mt-1"
@@ -539,21 +548,21 @@ const FreeCapacityMap: React.FC = () => {
                 <div className="row mt-2">
                   <div className="col-md-6">
                     <small className="text-muted d-block mb-1">ИНН:</small>
-                    <div className="fw-bold">{selectedArea.org.inn}</div>
+                    <div className="fw-bold">{selectedArea.org?.inn || 'Н/Д'}</div>
                   </div>
                   <div className="col-md-6">
                     <small className="text-muted d-block mb-1">ОГРН:</small>
-                    <div className="fw-bold">{selectedArea.org.ogrn}</div>
+                    <div className="fw-bold">{selectedArea.org?.ogrn || 'Н/Д'}</div>
                   </div>
                 </div>
                 <div className="row mt-2">
                   <div className="col-md-6">
                     <small className="text-muted d-block mb-1">Телефон:</small>
-                    <div className="fw-bold">{selectedArea.org.phone}</div>
+                    <div className="fw-bold">{selectedArea.org?.phone || 'Н/Д'}</div>
                   </div>
                   <div className="col-md-6">
                     <small className="text-muted d-block mb-1">Адрес:</small>
-                    <div className="fw-bold">{selectedArea.org.orgAddress}</div>
+                    <div className="fw-bold">{selectedArea.org?.orgAddress || 'Н/Д'}</div>
                   </div>
                 </div>
               </div>

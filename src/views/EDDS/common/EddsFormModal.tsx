@@ -115,8 +115,9 @@ const EddsFormModal: React.FC<EddsFormModalProps> = ({
         citiesArray = citiesData;
       } else if (citiesData && typeof citiesData === 'object') {
         // Если API вернул объект с data полем (paginatedData)
-        if (Array.isArray(citiesData.data)) {
-          citiesArray = citiesData.data;
+        const dataObj = citiesData as { data?: any[] };
+        if (dataObj.data && Array.isArray(dataObj.data)) {
+          citiesArray = dataObj.data;
         } else {
           // Если это объект с городами, преобразуем его в массив
           citiesArray = Object.values(citiesData).filter(item => 
@@ -129,7 +130,7 @@ const EddsFormModal: React.FC<EddsFormModalProps> = ({
       
       // По умолчанию выбираем Воронеж (ID: 2)
       if (citiesArray.length > 0) {
-        const voronezh = citiesArray.find(city => city.name === 'Воронеж') || citiesArray[0];
+        const voronezh = citiesArray.find((city: { name: string, id: number }) => city.name === 'Воронеж') || citiesArray[0];
         setSelectedCity(voronezh.id.toString());
       }
       
@@ -154,8 +155,9 @@ const EddsFormModal: React.FC<EddsFormModalProps> = ({
         streetsArray = streetsData;
       } else if (streetsData && typeof streetsData === 'object') {
         // Если API вернул объект с data полем (paginatedData)
-        if (Array.isArray(streetsData.data)) {
-          streetsArray = streetsData.data;
+        const dataObj = streetsData as { data?: any[] };
+        if (dataObj.data && Array.isArray(dataObj.data)) {
+          streetsArray = dataObj.data;
         } else {
           // Если это объект с улицами, преобразуем его в массив
           streetsArray = Object.values(streetsData).filter(item => 
@@ -187,8 +189,9 @@ const EddsFormModal: React.FC<EddsFormModalProps> = ({
         addressesArray = addressesData;
       } else if (addressesData && typeof addressesData === 'object') {
         // Если API вернул объект с data полем (paginatedData)
-        if (Array.isArray(addressesData.data)) {
-          addressesArray = addressesData.data;
+        const dataObj = addressesData as { data?: any[] };
+        if (dataObj.data && Array.isArray(dataObj.data)) {
+          addressesArray = dataObj.data;
         } else {
           // Если это объект с адресами, преобразуем его в массив
           addressesArray = Object.values(addressesData).filter(item => 
@@ -200,7 +203,7 @@ const EddsFormModal: React.FC<EddsFormModalProps> = ({
       setAddresses(addressesArray);
       
       // Обновляем список опций адресов для выбора
-      const options = addressesArray.map(addr => ({
+      const options = addressesArray.map((addr: { id: number, house_number?: string, building?: string, structure?: string, literature?: string, latitude?: number, longitude?: number }) => ({
         value: addr.id,
         label: `${addr.house_number || ''}${addr.building ? ` корп. ${addr.building}` : ''}${addr.structure ? ` стр. ${addr.structure}` : ''}${addr.literature ? ` лит. ${addr.literature}` : ''}${addr.latitude && addr.longitude ? ' (есть координаты)' : ''}`
       }));

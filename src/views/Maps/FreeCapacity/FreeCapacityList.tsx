@@ -75,7 +75,7 @@ const FreeCapacityList: React.FC = () => {
   const [searchInput, setSearchInput] = useState('');
   const [authError, setAuthError] = useState<boolean>(false);
   const [apiRetryCount, setApiRetryCount] = useState<number>(0);
-  const [apiSuccessful, setApiSuccessful] = useState<boolean>(false);
+  const [_apiSuccessful, setApiSuccessful] = useState<boolean>(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showEditOffcanvas, setShowEditOffcanvas] = useState(false);

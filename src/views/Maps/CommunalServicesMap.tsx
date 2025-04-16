@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer, Tabs, Tab, Nav } from 'react-bootstrap';
+import { Card, Row, Col, Modal, Button, Spinner, Form, InputGroup, Toast, ToastContainer, Nav } from 'react-bootstrap';
 import { Link } from 'react-router-dom';
 import {
   initializeApi,
@@ -7,64 +7,14 @@ import {
   getIncidentResourceTypes,
   getOrganizations,
   getCities,
-  api,
   getIncidentTypes,
   createIncident
 } from '../../services/api';
 import { CommunalServicesMapItem } from '../../services/api';
 
-interface UserRole {
-  id: number;
-  name: string;
-  slug: string;
-  center_lat: string;
-  center_lng: string;
-  south_west_lat: string;
-  south_west_lng: string;
-  north_east_lat: string;
-  north_east_lng: string;
-  created_at: string;
-  updated_at: string;
-  pivot: {
-    user_id: number;
-    role_id: number;
-  };
-}
 
-interface UserProfile {
-  id: number;
-  created_at: string;
-  updated_at: string;
-  org_id: number;
-  first_name: string;
-  last_name: string;
-  middle_name: string;
-  phone: string;
-  login: string;
-  email: string | null;
-  telegram: string | null;
-  vk: string | null;
-  inn: string | null;
-  center_lat: string;
-  center_lng: string;
-  south_west_lat: string;
-  south_west_lng: string;
-  north_east_lat: string;
-  north_east_lng: string;
-  roles: UserRole[];
-  org: {
-    id: number;
-    fullName: string;
-    inn: string;
-    ogrn: string;
-    orgAddress: string;
-    phone: string;
-    shortName: string;
-    url: string | null;
-    created_at: string;
-    updated_at: string;
-  };
-}
+
+
 
 declare global {
   interface Window {
@@ -117,19 +67,13 @@ interface MapBoundaries {
   north_east_lng: number;
 }
 
-interface AreaData {
-  id: number;
-  title: string;
-  description: string;
-  coords: number[][];
-  color?: string;
-}
+
 
 interface ComplaintFormData {
   title: string;
   description: string;
-  incident_type_id: number | null;
-  incident_resource_type_id: number | null;
+  incident_type_id: number | undefined;
+  incident_resource_type_id: number | undefined;
   address_ids: number[];
   is_complaint: boolean;
 }
@@ -160,15 +104,15 @@ const CommunalServicesMap: React.FC = () => {
   const mapInstanceRef = useRef<any>(null);
 
   const [showAreaModal, setShowAreaModal] = useState<boolean>(false);
-  const [selectedArea, setSelectedArea] = useState<{title: string, description: string} | null>(null);
+  const [selectedArea] = useState<{title: string, description: string} | null>(null);
 
   const [showComplaintModal, setShowComplaintModal] = useState<boolean>(false);
   const [submittingComplaint, setSubmittingComplaint] = useState<boolean>(false);
   const [complaintForm, setComplaintForm] = useState<ComplaintFormData>({
     title: '',
     description: '',
-    incident_type_id: null,
-    incident_resource_type_id: null,
+    incident_type_id: undefined,
+    incident_resource_type_id: undefined,
     address_ids: [],
     is_complaint: true
   });
@@ -720,8 +664,8 @@ const CommunalServicesMap: React.FC = () => {
       setComplaintForm({
         title: '',
         description: '',
-        incident_type_id: null,
-        incident_resource_type_id: null,
+        incident_type_id: undefined,
+        incident_resource_type_id: undefined,
         address_ids: [house.address.id],
         is_complaint: true
       });
@@ -745,7 +689,7 @@ const CommunalServicesMap: React.FC = () => {
     const { name, value } = e.target;
     setComplaintForm({
       ...complaintForm,
-      [name]: value ? parseInt(value, 10) : null
+      [name]: value ? parseInt(value, 10) : undefined
     });
   };
 
@@ -760,14 +704,14 @@ const CommunalServicesMap: React.FC = () => {
         return;
       }
 
-      const response = await createIncident(complaintForm);
+      await createIncident(complaintForm);
       
       setShowComplaintModal(false);
       setComplaintForm({
         title: '',
         description: '',
-        incident_type_id: null,
-        incident_resource_type_id: null,
+        incident_type_id: undefined,
+        incident_resource_type_id: undefined,
         address_ids: [],
         is_complaint: true
       });

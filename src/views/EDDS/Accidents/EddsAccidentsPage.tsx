@@ -12,6 +12,7 @@ import {
   getCities,
   searchAddresses
 } from '../../../services/api';
+import { Address } from '../../../types/incident';
 import EddsMap from '../common/EddsMap';
 import EddsTable from '../common/EddsTable';
 import EddsDetailModal from '../common/EddsDetailModal';
@@ -34,21 +35,6 @@ interface NewIncidentFormData {
 }
 
 // Add interfaces for API response structures
-interface PaginatedResponse<T> {
-  current_page: number;
-  data: T[];
-  first_page_url: string;
-  from: number;
-  last_page: number;
-  last_page_url: string;
-  links: any[];
-  next_page_url: string | null;
-  path: string;
-  per_page: number;
-  prev_page_url: string | null;
-  to: number;
-  total: number;
-}
 
 interface City {
   id: number;
@@ -58,24 +44,7 @@ interface City {
   updated_at: string;
 }
 
-interface Address {
-  id: number;
-  street_id: number;
-  house_number: string;
-  building: string | null;
-  structure: string | null;
-  literature: string | null;
-  latitude: string;
-  longitude: string;
-  street?: {
-    id: number;
-    name: string;
-    city?: {
-      id: number;
-      name: string;
-    }
-  };
-}
+// We're now using the Address type imported from types/incident
 
 const EddsAccidentsPage: React.FC = () => {
   const [view, setView] = useState<'table' | 'map'>('table');
@@ -87,8 +56,7 @@ const EddsAccidentsPage: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState<boolean>(false);
   const [detailLoading, setDetailLoading] = useState<boolean>(false);
   const [currentIncident, setCurrentIncident] = useState<EddsIncident | null>(null);
-  // Keep track of the specific address that was clicked
-  const [currentAddress, setCurrentAddress] = useState<any>(null);
+  // We're now using focusedIncidentWithAddress instead of currentAddress
   const [activeFilters, setActiveFilters] = useState({
     incidentType: '',
     resourceType: '',
@@ -276,7 +244,7 @@ const EddsAccidentsPage: React.FC = () => {
   const handleViewDetails = (incident: EddsIncident) => {
     setDetailLoading(true);
     setCurrentIncident(incident);
-    setCurrentAddress(null); // Reset the current address
+    setFocusedIncidentWithAddress(null); // Reset the focused incident with address
     setShowDetailModal(true);
     setTimeout(() => {
       setDetailLoading(false);
@@ -284,10 +252,10 @@ const EddsAccidentsPage: React.FC = () => {
   };
 
   // New handler function that also accepts a specific address
-  const handleViewDetailsWithAddress = (incident: EddsIncident, address: any) => {
+  const handleViewDetailsWithAddress = (incident: EddsIncident, address: Address) => {
     setDetailLoading(true);
     setCurrentIncident(incident);
-    setCurrentAddress(address); // Store the specific address
+    setFocusedIncidentWithAddress({ incident, address }); // Store the incident with specific address
     setShowDetailModal(true);
     setTimeout(() => {
       setDetailLoading(false);
